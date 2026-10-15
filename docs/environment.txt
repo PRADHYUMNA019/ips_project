@@ -1,0 +1,5 @@
+7.0.0-28-generic
+Ubuntu clang version 21.1.8 (6ubuntu1)
+bpftool v7.7.0
+using libbpf v1.7
+features:

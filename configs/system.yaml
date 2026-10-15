@@ -1,0 +1,7 @@
+system:
+  early_n: 12              # packets observed before feature event is emitted
+  flow_map_max: 4096        # LRU capacity
+  verdict_ttl_s: 60         # future: verdict cache entry lifetime
+  target_fpr: 0.001         # future: EVT calibration target
+engine:
+  auto_block_mean_iat_ms: 50.0   # placeholder rule (Phase 4 replaces with model)
