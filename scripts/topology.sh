@@ -29,7 +29,9 @@ create() {
   create_ns iot2     $LAN.3  br-lan $LAN.1
   create_ns attacker $LAN.4  br-lan $LAN.1
   create_ns srv      $WAN.10 br-wan $WAN.1
-  sysctl -w net.ipv4.ip_forward=1
+  sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+  iptables -P FORWARD ACCEPT >/dev/null 2>&1 || true
+  iptables -I FORWARD 1 -j ACCEPT >/dev/null 2>&1 || true
   echo "[OK] topology up"
 }
 

@@ -5,7 +5,6 @@ build/
 *.npy
 results/csv/
 results/logs/
-traffic/certs/
 ml/data/
 ml/models/*.onnx
 ml/models/*.tflite
