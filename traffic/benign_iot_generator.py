@@ -56,6 +56,7 @@ def run_iot_device(device_id, profile_name, server_ip, server_port=8883, duratio
                     payload += b"\x00" * (size - len(payload))
                 tls.sendall(payload)
                 msg_count += 1
+                logger.info(f"[{device_id:<12} | {profile_name:<18}] Telemetry #{msg_count:03d} sent ({len(payload):4d}B) -> next in ~{wait:.1f}s")
 
                 if random.random() < profile["burst_probability"]:
                     for _ in range(random.randint(*profile["burst_count"])):

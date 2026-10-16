@@ -36,16 +36,21 @@ def ensure_certs():
 
 
 def handle_client(conn, addr):
-    logger.info(f"connection from {addr}")
+    logger.info(f"[TLS CONNECT] Client connected: {addr}")
+    pkt_count = 0
     try:
         while True:
             data = conn.recv(4096)
             if not data:
                 break
+            pkt_count += 1
+            snippet = data[:24].decode(errors="replace").strip()
+            logger.info(f"[{addr}] Pkt #{pkt_count} ({len(data)}B) '{snippet}' -> Echoing ACK")
             conn.sendall(data[:64])   # small echo, like an ACK
     except Exception as e:
-        logger.debug(f"{addr} disconnected: {e}")
+        logger.debug(f"[{addr}] Disconnected: {e}")
     finally:
+        logger.info(f"[TLS DISCONNECT] {addr} closed after {pkt_count} packets")
         conn.close()
 
 
