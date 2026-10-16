@@ -84,6 +84,8 @@ struct ips_event {
 BPF_HASH(flow_state, struct flow_key, struct flow_state, 4096);
 BPF_HASH(drop_map, u32, u8, 256);
 BPF_RINGBUF_OUTPUT(events, 1 << 17);
+BPF_PERCPU_ARRAY(scratch_evt, struct ips_event, 1);
+BPF_PERCPU_ARRAY(zero_state, struct flow_state, 1);
 
 int xdp_engine(struct xdp_md *ctx)
 {
@@ -98,30 +100,34 @@ int xdp_engine(struct xdp_md *ctx)
     if ((void *)(ip + 1) > data_end) return XDP_PASS;
     if (ip->ihl != 5) return XDP_PASS;
 
+    u32 zero_idx = 0;
+    struct ips_event *evt = scratch_evt.lookup(&zero_idx);
+    if (!evt) return XDP_PASS;
+
     u32 saddr = ip->saddr;
     u8 *blocked = drop_map.lookup(&saddr);
     if (blocked && *blocked) {
-        struct ips_event devt = {};
-        devt.event_type = 3; // PKT_DROP
-        devt.src_ip = ip->saddr;
-        devt.dst_ip = ip->daddr;
-        devt.proto  = ip->protocol;
-        devt.pkt_len = (u16)(data_end - data);
-        devt.ts_ns  = bpf_ktime_get_ns();
+        __builtin_memset(evt, 0, sizeof(*evt));
+        evt->event_type = 3; // PKT_DROP
+        evt->src_ip = ip->saddr;
+        evt->dst_ip = ip->daddr;
+        evt->proto  = ip->protocol;
+        evt->pkt_len = (u16)(data_end - data);
+        evt->ts_ns  = bpf_ktime_get_ns();
         if (ip->protocol == IPPROTO_TCP) {
             struct tcphdr *tcp = (void *)ip + 20;
             if ((void *)(tcp + 1) <= data_end) {
-                devt.src_port = tcp->source;
-                devt.dst_port = tcp->dest;
+                evt->src_port = tcp->source;
+                evt->dst_port = tcp->dest;
             }
         } else if (ip->protocol == IPPROTO_UDP) {
             struct udphdr *udp = (void *)ip + 20;
             if ((void *)(udp + 1) <= data_end) {
-                devt.src_port = udp->source;
-                devt.dst_port = udp->dest;
+                evt->src_port = udp->source;
+                evt->dst_port = udp->dest;
             }
         }
-        events.ringbuf_output(&devt, sizeof(devt), 0);
+        events.ringbuf_output(evt, sizeof(*evt), 0);
         return XDP_DROP;
     }
 
@@ -155,8 +161,9 @@ int xdp_engine(struct xdp_md *ctx)
     u64 now = bpf_ktime_get_ns();
     u64 len = (__u64)(data_end - data);
 
-    struct flow_state zero = {};
-    struct flow_state *st = flow_state.lookup_or_try_init(&key, &zero);
+    struct flow_state *zero = zero_state.lookup(&zero_idx);
+    if (!zero) return XDP_PASS;
+    struct flow_state *st = flow_state.lookup_or_try_init(&key, zero);
     if (!st) return XDP_PASS;
 
     u16 n = st->pkt_count;
@@ -166,16 +173,16 @@ int xdp_engine(struct xdp_md *ctx)
         st->dirs[0]   = dir;
         st->last_ts_ns = now;
 
-        struct ips_event pevt = {};
-        pevt.event_type = 1; // PKT_TRACE
-        pevt.src_ip = ip->saddr; pevt.dst_ip = ip->daddr;
-        pevt.src_port = sport;   pevt.dst_port = dport;
-        pevt.proto = ip->protocol;
-        pevt.pkt_len = (u16)len;
-        pevt.pkt_index = 1;
-        pevt.dir = dir;
-        pevt.ts_ns = now;
-        events.ringbuf_output(&pevt, sizeof(pevt), 0);
+        __builtin_memset(evt, 0, sizeof(*evt));
+        evt->event_type = 1; // PKT_TRACE
+        evt->src_ip = ip->saddr; evt->dst_ip = ip->daddr;
+        evt->src_port = sport;   evt->dst_port = dport;
+        evt->proto = ip->protocol;
+        evt->pkt_len = (u16)len;
+        evt->pkt_index = 1;
+        evt->dir = dir;
+        evt->ts_ns = now;
+        events.ringbuf_output(evt, sizeof(*evt), 0);
         return XDP_PASS;
     }
     if (n >= EARLY_N) {
@@ -189,36 +196,36 @@ int xdp_engine(struct xdp_md *ctx)
     st->pkt_count = n + 1;
     st->last_ts_ns = now;
 
-    struct ips_event pevt = {};
-    pevt.event_type = 1; // PKT_TRACE
-    pevt.src_ip = ip->saddr; pevt.dst_ip = ip->daddr;
-    pevt.src_port = sport;   pevt.dst_port = dport;
-    pevt.proto = ip->protocol;
-    pevt.pkt_len = (u16)len;
-    pevt.pkt_index = (u8)st->pkt_count;
-    pevt.dir = dir;
-    pevt.ts_ns = now;
-    pevt.iat_ns = iat;
-    events.ringbuf_output(&pevt, sizeof(pevt), 0);
+    __builtin_memset(evt, 0, sizeof(*evt));
+    evt->event_type = 1; // PKT_TRACE
+    evt->src_ip = ip->saddr; evt->dst_ip = ip->daddr;
+    evt->src_port = sport;   evt->dst_port = dport;
+    evt->proto = ip->protocol;
+    evt->pkt_len = (u16)len;
+    evt->pkt_index = (u8)st->pkt_count;
+    evt->dir = dir;
+    evt->ts_ns = now;
+    evt->iat_ns = iat;
+    events.ringbuf_output(evt, sizeof(*evt), 0);
 
     if (st->pkt_count == EARLY_N) {
-        struct ips_event fevt = {};
-        fevt.event_type = 2; // EARLY_FLOW
-        fevt.src_ip = ip->saddr; fevt.dst_ip = ip->daddr;
-        fevt.src_port = sport;   fevt.dst_port = dport;
-        fevt.proto = ip->protocol;
-        fevt.pkt_len = (u16)len;
-        fevt.pkt_index = (u8)st->pkt_count;
-        fevt.ts_ns = now;
+        __builtin_memset(evt, 0, sizeof(*evt));
+        evt->event_type = 2; // EARLY_FLOW
+        evt->src_ip = ip->saddr; evt->dst_ip = ip->daddr;
+        evt->src_port = sport;   evt->dst_port = dport;
+        evt->proto = ip->protocol;
+        evt->pkt_len = (u16)len;
+        evt->pkt_index = (u8)st->pkt_count;
+        evt->ts_ns = now;
         #pragma unroll
         for (int i = 0; i < EARLY_N; i++) {
-            fevt.sizes[i] = st->sizes[i];
-            fevt.dirs[i]  = st->dirs[i];
+            evt->sizes[i] = st->sizes[i];
+            evt->dirs[i]  = st->dirs[i];
         }
         #pragma unroll
         for (int i = 0; i < EARLY_N - 1; i++)
-            fevt.iats_ns[i] = st->iats_ns[i];
-        events.ringbuf_output(&fevt, sizeof(fevt), 0);
+            evt->iats_ns[i] = st->iats_ns[i];
+        events.ringbuf_output(evt, sizeof(*evt), 0);
     }
     return XDP_PASS;
 }
