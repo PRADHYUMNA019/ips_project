@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-engine/ringbuf_engine.py — two-tier IPS core (30% slice).
+engine/ringbuf_engine.py — two-tier inline IPS core engine.
 
 Kernel (XDP): bidirectional flow tracking, first-12-packet feature capture,
 feature event to ring buffer, drop-map enforcement.

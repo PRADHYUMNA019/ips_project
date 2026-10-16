@@ -47,7 +47,7 @@ fi
 echo -e "\n=========================================================="
 if [ "$FAIL" -eq 0 ]; then
     echo "  [SUCCESS] All critical dependencies are satisfied!"
-    echo "  You are ready for the Saturday presentation demo."
+    echo "  You are ready for the live system demonstration."
 else
     echo "  [WARNING] $FAIL critical dependencies are missing!"
     echo "  Please install the missing packages before presenting."

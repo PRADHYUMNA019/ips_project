@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# scripts/demo.sh — Full 30% Implementation Demo (Automated Infrastructure & Baseline)
+# scripts/demo.sh — System Demonstration (Automated Infrastructure & Baseline)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p results/logs results/csv
 
 echo -e "\033[1;36m========================================================================================\033[0m"
-echo -e "\033[1;36m   DRIFT-RESILIENT ON-DEVICE INLINE IPS — 30% IMPLEMENTATION LIVE DEMO                   \033[0m"
+echo -e "\033[1;36m   DRIFT-RESILIENT ON-DEVICE INLINE IPS — LIVE SYSTEM DEMONSTRATION                      \033[0m"
 echo -e "\033[1;36m========================================================================================\033[0m\n"
 
 echo -e "\033[1;33m>>> [STAGE 1/6] Testbed Initialization: Virtual Network Topology <<<\033[0m"
