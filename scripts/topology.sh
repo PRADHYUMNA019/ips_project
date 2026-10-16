@@ -17,6 +17,7 @@ create_ns() {  # name ip bridge gw
 }
 
 create() {
+  teardown >/dev/null 2>&1 || true
   ip link add br-lan type bridge;  ip link set br-lan up
   ip link add br-wan type bridge;  ip link set br-wan up
   ip link add v-lan-gw type veth peer name v-lan-br
@@ -36,11 +37,12 @@ create() {
 }
 
 teardown() {
-  for ns in iot1 iot2 attacker srv; do ip netns del "$ns" 2>/dev/null || true; done
-  ip link del v-lan-br 2>/dev/null || true
-  ip link del v-wan-br 2>/dev/null || true
-  ip link del br-lan   2>/dev/null || true
-  ip link del br-wan   2>/dev/null || true
+  for ns in iot1 iot2 attacker srv; do
+    ip netns del "$ns" 2>/dev/null || true
+  done
+  for link in v-lan-gw v-lan-br v-wan-gw v-wan-br br-lan br-wan iot1-gw iot2-gw attacker-gw srv-gw; do
+    ip link del "$link" 2>/dev/null || true
+  done
   echo "[OK] topology down"
 }
 
