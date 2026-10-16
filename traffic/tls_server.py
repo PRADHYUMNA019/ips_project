@@ -12,9 +12,27 @@ import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger("TLS-Server")
 
-CERT = "/home/vboxuser/ips-project/traffic/certs/server.crt"
-KEY  = "/home/vboxuser/ips-project/traffic/certs/server.key"
+import os
+import subprocess
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CERTS_DIR = os.path.join(BASE_DIR, "certs")
+CERT = os.path.join(CERTS_DIR, "server.crt")
+KEY  = os.path.join(CERTS_DIR, "server.key")
 HOST, PORT = "0.0.0.0", 8883
+
+def ensure_certs():
+    if not os.path.exists(CERTS_DIR):
+        os.makedirs(CERTS_DIR, exist_ok=True)
+    if not os.path.exists(CERT) or not os.path.exists(KEY):
+        logger.info(f"Generating self-signed certificate in {CERTS_DIR}...")
+        cmd = [
+            "openssl", "req", "-x509", "-newkey", "rsa:2048",
+            "-keyout", KEY, "-out", CERT, "-days", "365",
+            "-nodes", "-subj", "/CN=10.0.2.10"
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logger.info("Certificate generated successfully.")
 
 
 def handle_client(conn, addr):
@@ -32,6 +50,7 @@ def handle_client(conn, addr):
 
 
 def main():
+    ensure_certs()
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(CERT, KEY)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2

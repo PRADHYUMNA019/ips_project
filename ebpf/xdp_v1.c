@@ -1,3 +1,8 @@
+/*
+ * ebpf/xdp_v1.c — Phase 1: Standalone XDP Kernel-Only Baseline.
+ * Used for Stage 4 fast-path verification (manual drop_map insertion via bpftool).
+ * Note: The full two-tier ringbuffer engine is implemented in engine/ringbuf_engine.py.
+ */
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
 #include <linux/ip.h>

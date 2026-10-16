@@ -31,8 +31,8 @@ sudo ./scripts/xdp.sh detach
 
 echo ""
 echo "=== [5/6] Now open TWO more terminals: ==="
-echo "  T2:  cd ~/ips-project && sudo python3 engine/ringbuf_engine.py"
-echo "  T3:  sleep 15 && sudo ip netns exec attacker python3 traffic/attack_beacon.py 20 60"
+echo "  T2:  cd $(pwd) && sudo python3 engine/ringbuf_engine.py"
+echo "  T3:  cd $(pwd) && sleep 15 && sudo ip netns exec attacker python3 traffic/attack_beacon.py 20 60"
 echo ""
 echo "=== [6/6] After the demo: baseline measurements ==="
 echo "  sudo ./scripts/baseline.sh plain 3"

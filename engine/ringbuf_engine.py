@@ -11,6 +11,7 @@ loop. Phase 4 replaces it with the INT8 autoencoder + EVT threshold.
 
 Run:  sudo python3 engine/ringbuf_engine.py     (Ctrl-C to stop)
 """
+import os
 import ctypes
 import socket
 import struct
@@ -18,9 +19,18 @@ import time
 
 from bcc import BPF
 
-EARLY_N = 12
+try:
+    import yaml
+    _cfg_path = os.path.join(os.path.dirname(__file__), "..", "configs", "system.yaml")
+    with open(_cfg_path, "r") as _f:
+        _cfg = yaml.safe_load(_f) or {}
+    EARLY_N = int(_cfg.get("system", {}).get("early_n", 12))
+    AUTO_BLOCK_MEAN_IAT_MS = float(_cfg.get("engine", {}).get("auto_block_mean_iat_ms", 50.0))
+except Exception:
+    EARLY_N = 12
+    AUTO_BLOCK_MEAN_IAT_MS = 50.0
+
 IFACE = "v-lan-gw"
-AUTO_BLOCK_MEAN_IAT_MS = 50.0   # placeholder rule
 
 XDP_SRC = r"""
 #include <uapi/linux/bpf.h>
@@ -68,7 +78,7 @@ struct feature_event {
 
 BPF_HASH(flow_state, struct flow_key, struct flow_state, 4096);
 BPF_HASH(drop_map, u32, u8, 256);
-BPF_RINGBUF_OUTPUT(events, 1 << 12);
+BPF_RINGBUF_OUTPUT(events, 1 << 16);
 
 int xdp_engine(struct xdp_md *ctx)
 {
@@ -169,9 +179,15 @@ def main():
     bpf = BPF(text=XDP_SRC)
     fn = bpf.load_func("xdp_engine", BPF.XDP)
     try:
-        bpf.attach_xdp(IFACE, fn)
-    except Exception:
-        bpf.attach_xdp(IFACE, fn, flags=2)   # generic/SKB mode fallback
+        try:
+            bpf.attach_xdp(IFACE, fn)
+        except Exception:
+            bpf.attach_xdp(IFACE, fn, flags=2)   # generic/SKB mode fallback
+    except Exception as e:
+        print(f"[engine ERROR] Failed to attach XDP to '{IFACE}'.")
+        print(f"               Ensure network topology is up: 'sudo ./scripts/topology.sh create'")
+        print(f"               Details: {e}")
+        return
     print(f"[engine] XDP attached to {IFACE} — listening for feature events")
     print("[engine] benign TLS telemetry flows have mean_iat >= ~250 ms")
     print("[engine] a 20 ms beacon will trip the placeholder rule\n")

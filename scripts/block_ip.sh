@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # scripts/block_ip.sh — block <ip> | unblock <ip> | list
 set -euo pipefail
-ID=$(sudo bpftool -j -p map show | jq -r '.[] | select(.name=="drop_map") | .id')
+ID=$(sudo bpftool -j -p map show 2>/dev/null | jq -r '.[] | select(.name=="drop_map") | .id' 2>/dev/null | head -n 1 || true)
+if [ -z "${ID:-}" ] || [ "$ID" = "null" ]; then
+  echo "[FAIL] drop_map not found. Ensure xdp_v1 is attached (sudo ./scripts/xdp.sh attach) or engine is running." >&2
+  exit 1
+fi
 case "${1:-}" in
   block)
     KEY=$(printf '%02x %02x %02x %02x' $(echo "$2" | tr '.' ' '))
