@@ -1,0 +1,43 @@
+# configs/experiments/demo_scenario.yaml — Standard multi-attack benchmark scenario
+
+name: "benchmark_evaluation_run"
+duration_total_s: 180
+
+phases:
+  - name: "benign_warmup"
+    duration_s: 30
+    traffic: "benign"
+    scale: 1.0
+
+  - name: "attack_a1_flood"
+    duration_s: 15
+    attack: "A1_flood"
+    target_ip: "10.0.2.10"
+    target_port: 8883
+
+  - name: "attack_a2_slowloris"
+    duration_s: 25
+    attack: "A2_slowloris"
+    target_ip: "10.0.2.10"
+    target_port: 8883
+
+  - name: "attack_a3_c2"
+    duration_s: 30
+    attack: "A3_c2"
+    target_ip: "10.0.2.10"
+    target_port: 8883
+    params:
+      interval: 5.0
+      jitter: 0.30
+
+  - name: "attack_a4_exfil"
+    duration_s: 20
+    attack: "A4_exfil"
+    target_ip: "10.0.2.10"
+    target_port: 8883
+
+  - name: "attack_a5_bruteforce"
+    duration_s: 20
+    attack: "A5_bruteforce"
+    target_ip: "10.0.2.10"
+    target_port: 8883
