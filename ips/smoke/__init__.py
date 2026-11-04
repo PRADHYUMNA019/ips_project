@@ -1,0 +1,1 @@
+# ips smoke module init
