@@ -1,10 +1,43 @@
+# Python
 __pycache__/
 *.pyc
+*.egg-info/
+.pytest_cache/
+
+# Build
 build/
+dist/
+
+# Data / captures
 *.pcap
 *.npy
 results/csv/
 results/logs/
+results/raw/
+results/figures/
+results/equivalence/
+results/system/
+results/offline/
+
+# Models (large binaries)
+models/*.onnx
+models/*.tflite
 ml/data/
 ml/models/*.onnx
 ml/models/*.tflite
+
+# TLS certificates — generated at runtime (H7: never commit secrets)
+traffic/certs/server.key
+traffic/certs/server.crt
+traffic/certs/*.pem
+
+# Datasets (downloaded, not committed)
+datasets/raw/
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

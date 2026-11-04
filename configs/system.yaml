@@ -1,7 +1,48 @@
+# configs/system.yaml — Central configuration for the IPS.
+# All C defines, Python parameters, and experiment settings derive from this file.
+
 system:
-  early_n: 12              # packets observed before feature event is emitted
-  flow_map_max: 4096        # LRU capacity
-  verdict_ttl_s: 60         # future: verdict cache entry lifetime
-  target_fpr: 0.001         # future: EVT calibration target
+  early_n: 12                # payload packets observed before EARLY_FLOW event
+  flow_map_max: 4096         # LRU flow_state capacity
+  verdict_map_max: 4096      # LRU verdict_map capacity
+
+  # Verdict TTLs (seconds)
+  bypass_ttl_s: 300          # how long a BYPASS verdict persists
+  drop_ttl_s: 60             # how long a DROP verdict persists
+
+  # EVT calibration target
+  target_fpr: 0.001
+
+  # Operating mode: observe (log only) | enforce (actually drop)
+  mode: observe
+
+  # Verdict cache: on | off (ablation)
+  bypass: on
+
+  # Drift guard: off | plain_adwin | guarded
+  guard: off
+
+  # Model path (relative to repo root)
+  model_path: models/autoencoder_int8.onnx
+
+  # Device registry
+  devices_path: configs/devices.yaml
+
 engine:
-  auto_block_mean_iat_ms: 50.0   # placeholder rule (Phase 4 replaces with model)
+  # Placeholder threshold (WP5 replaces with EVT-calibrated)
+  auto_block_mean_iat_ms: 50.0
+
+  # Watchdog thresholds
+  watchdog:
+    max_ringbuf_failures_per_s: 100
+    max_event_rate_per_s: 10000
+    max_engine_lag_ms: 500
+    cooldown_s: 30
+
+  # Tier-0 per-source new-flow-rate guard
+  tier0:
+    enabled: true
+    max_new_flows_per_s: 50    # per source IP
+    bucket_refill_rate: 50     # tokens per second
+    bucket_capacity: 100       # max burst
+    block_ttl_s: 30            # how long to block after rate exceeded

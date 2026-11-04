@@ -1,0 +1,100 @@
+# configs/devices.yaml — Device fleet definition.
+# Each device gets its own network namespace and IP address.
+# The topology.sh script reads this to create per-device namespaces.
+# The generator reads it to know which profile to run.
+#
+# Fields:
+#   device_id : unique name, also used as the netns name
+#   ip        : assigned address in 10.0.1.0/24
+#   class     : device class (for per-class baselines)
+#   profile   : profile key in benign_iot_generator.py PROFILES dict
+#   connection: persistent (keep-alive) | reconnect (new conn per message)
+
+devices:
+  # --- Sensors (class: sensor, ~10s interval, small payload) ---
+  - device_id: sensor-01
+    ip: "10.0.1.10"
+    class: sensor
+    profile: temperature_sensor
+    connection: persistent
+
+  - device_id: sensor-02
+    ip: "10.0.1.11"
+    class: sensor
+    profile: temperature_sensor
+    connection: persistent
+
+  - device_id: sensor-03
+    ip: "10.0.1.12"
+    class: sensor
+    profile: temperature_sensor
+    connection: reconnect
+
+  - device_id: sensor-04
+    ip: "10.0.1.13"
+    class: sensor
+    profile: temperature_sensor
+    connection: persistent
+
+  # --- Plugs (class: plug, ~30s interval, small payload) ---
+  - device_id: plug-01
+    ip: "10.0.1.20"
+    class: plug
+    profile: smart_plug
+    connection: persistent
+
+  - device_id: plug-02
+    ip: "10.0.1.21"
+    class: plug
+    profile: smart_plug
+    connection: reconnect
+
+  - device_id: plug-03
+    ip: "10.0.1.22"
+    class: plug
+    profile: smart_plug
+    connection: persistent
+
+  # --- Thermostats (class: thermostat, ~15s interval) ---
+  - device_id: therm-01
+    ip: "10.0.1.30"
+    class: thermostat
+    profile: smart_thermostat
+    connection: persistent
+
+  - device_id: therm-02
+    ip: "10.0.1.31"
+    class: thermostat
+    profile: smart_thermostat
+    connection: reconnect
+
+  - device_id: therm-03
+    ip: "10.0.1.32"
+    class: thermostat
+    profile: smart_thermostat
+    connection: persistent
+
+  # --- Cameras (class: camera, fast, large payload) ---
+  - device_id: cam-01
+    ip: "10.0.1.40"
+    class: camera
+    profile: smart_camera
+    connection: persistent
+
+  - device_id: cam-02
+    ip: "10.0.1.41"
+    class: camera
+    profile: smart_camera
+    connection: persistent
+
+# --- Special namespaces (not benign fleet) ---
+attacker:
+  device_id: attacker
+  ip: "10.0.1.4"
+  class: attacker
+
+server:
+  device_id: srv
+  ip: "10.0.2.10"
+  subnet: wan
+
