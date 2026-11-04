@@ -14,8 +14,8 @@
 |---|------|----|--------|----------|
 | 1 | Repaired generator, per-device IPs, no committed secrets, truthful README | WP0 / WP0b | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_generator.py tests/test_topology_parse.py` (7 passed); V2: `topology.sh` rewritten for 12 devices / 14 namespaces, `NOT RUN (Linux required)` |
 | 2 | `docs/spec.md`, `docs/LIMITATIONS.md`, `docs/related_work_todo.md`, `docs/TODO_USER.md` | WP1 | ✅ DONE (V1) | All 4 specification and honesty documents authored and verified |
-| 3 | `docs/DATA_CARD.md`, adapters, audit scripts | WP2 | In Progress | |
-| 4 | Labelled TLS testbed captures with manifest, services, attacks A1–A5 | WP3 | Pending | |
+| 3 | `docs/DATA_CARD.md`, adapters, audit scripts | WP2 | ✅ DONE (V1) | V1: `pytest tests/test_dataset_adapters.py` (6 passed); `audit_pcap.py`, `DATA_CARD.md`, adapters (CESNET, TQH, Kitsune), download scripts; V3: real downloads marked in `TODO_USER.md` |
+| 4 | Labelled TLS testbed captures with manifest, services, attacks A1–A5 | WP3 | In Progress | |
 | 5 | Shared feature implementation (`ips/features.py`), shortcut guard | WP4 | Pending | |
 | 6 | Offline detection (IF/AE/Kitsune-style), EVT calibration, INT8 quantization | WP5 | Pending | |
 | 7 | Kernel v2 (`ebpf/ips_engine.c`), verdict cache, LRU state, tier-0 guard | WP6 | Pending | |

@@ -42,7 +42,7 @@ certs:
 # Data pipeline (stubs — filled in WP2–WP5)
 # ---------------------------------------------------------------------------
 data-audit:
-	@echo "WP2: not yet implemented"
+	python datasets/audit_pcap.py datasets/raw --out docs/DATA_CARD.md
 
 features:
 	@echo "WP4: not yet implemented"
