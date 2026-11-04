@@ -1,5 +1,21 @@
 # configs/system.yaml — Central configuration for the IPS.
-# All C defines, Python parameters, and experiment settings derive from this file.
+#
+# CONSUMPTION STATUS:
+# - Active today:
+#     system.early_n (used in Python feature extraction & smoke tests)
+#     system.target_fpr (used in EVT calibration)
+#     engine.auto_block_mean_iat_ms (30% baseline placeholder threshold)
+#     system.devices_path (read by generator & topology)
+# - Consumed from WP6 onwards:
+#     system.flow_map_max, system.verdict_map_max (drives BPF map capacities)
+#     system.bypass_ttl_s, system.drop_ttl_s (drives XDP verdict cache TTLs)
+#     system.mode (observe vs enforce)
+#     system.bypass (on vs off ablation)
+#     system.guard (off vs plain_adwin vs guarded)
+#     engine.watchdog.* (drives user-space engine load shedder)
+#     engine.tier0.* (drives XDP per-source new-flow token bucket)
+#
+# WP6 compiles these into C defines for ebpf/ips_engine.c and ctypes structs.
 
 system:
   early_n: 12                # payload packets observed before EARLY_FLOW event

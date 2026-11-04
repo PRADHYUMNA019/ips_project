@@ -1,52 +1,48 @@
 # Progress Tracker
 
-> Last updated: WP0 (branch `wp0-fix-30pct`)
+> Last updated: WP0b (branch `wp0-fix-30pct`)
+> Platform detected: Windows (`platform.system() == "Windows"`, win32, Python 3.12.3)
+
+## Verification Classes
+- **V1 – Ran here:** Pure-Python logic, models, EVT, drift, and unit tests. Executed on host.
+- **V2 – Linux-only:** Topology (netns/veth/bridges), XDP/eBPF kernel programs, BCC loader, tcpdump capture, services (mosquitto/nginx), attack injectors, system measurements. Statically checked where possible; marked `CODE WRITTEN, NOT RUN (Linux required)`.
+- **V3 – Data-dependent:** Experiments and metrics requiring real pcap captures or public datasets. Marked `NOT RUN (needs real data)`.
 
 ## 60% Checklist
 
 | # | Item | WP | Status | Evidence |
 |---|------|----|--------|----------|
-| 1 | Repaired generator, per-device IPs, no committed secrets, truthful README | WP0 | ✅ Done | `pytest tests/test_generator.py` passes; `topology.sh show` lists per-device namespaces; certs removed from git |
-| 2 | `docs/spec.md`, `docs/LIMITATIONS.md`, `docs/related_work_todo.md` | WP1 | ❌ Missing | |
-| 3 | `docs/DATA_CARD.md` with measured protocol mix | WP2 | ❌ Missing | |
-| 4 | Labelled TLS testbed captures with manifest | WP3 | ❌ Missing | |
-| 5 | Shared feature implementation with tests | WP4 | ❌ Missing | |
-| 6 | Offline detection table (IF/AE/Kitsune-style, N sweep, EVT) | WP5 | ❌ Missing | |
-| 7 | Kernel v2 with verdict cache, bidir tracking, LRU, tier-0 | WP6 | ❌ Missing | |
-| 8 | Closed loop with model-driven verdicts, watchdog | WP7 | ❌ Missing | |
-| 9 | Drift guard with S1–S5 scenarios | WP8 | ❌ Missing | |
-| 10 | `make reproduce`, RESULTS.md, final PROGRESS.md | WP9 | ❌ Missing | |
+| 1 | Repaired generator, per-device IPs, no committed secrets, truthful README | WP0 / WP0b | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_generator.py tests/test_topology_parse.py` (7 passed); V2: `topology.sh` rewritten for 12 devices / 14 namespaces, `NOT RUN (Linux required)` |
+| 2 | `docs/spec.md`, `docs/LIMITATIONS.md`, `docs/related_work_todo.md`, `docs/TODO_USER.md` | WP1 | In Progress | |
+| 3 | `docs/DATA_CARD.md`, adapters, audit scripts | WP2 | Pending | |
+| 4 | Labelled TLS testbed captures with manifest, services, attacks A1–A5 | WP3 | Pending | |
+| 5 | Shared feature implementation (`ips/features.py`), shortcut guard | WP4 | Pending | |
+| 6 | Offline detection (IF/AE/Kitsune-style), EVT calibration, INT8 quantization | WP5 | Pending | |
+| 7 | Kernel v2 (`ebpf/ips_engine.c`), verdict cache, LRU state, tier-0 guard | WP6 | Pending | |
+| 8 | Closed loop v2 (`ips/engine`), watchdog, measurement harness | WP7 | Pending | |
+| 9 | Drift guard (ADWIN, G1–G4 checks, scenarios S1–S5) | WP8 | Pending | |
+| 10 | `make reproduce`, `docs/RESULTS.md`, final consolidation | WP9 | Pending | |
 
-## WP0 — Repair the 30% work
+## WP0b — Corrections Summary
+- **F1 / A4 (Generator)**: Repaired `wait` order in `benign_iot_generator.py`. Added `--connection persistent|reconnect`, `--device-from-config`, `--time-scale`, and `reconnect_after_msgs` in profiles.
+- **F2 / A1 (Topology Parsing)**: Fixed `scripts/topology.sh` `parse_devices` untrimmed regex. Added `scripts/topology.sh list`. Validated with `tests/test_topology_parse.py`. Config defines 12 devices in 4 classes, plus attacker and server (14 namespaces total).
+- **A3 (Demo Scripts)**: Updated `scripts/demo.sh`, `scripts/baseline.sh`, and `scripts/monitor.sh` to match new 12-device fleet (`sensor-01` etc.) with dynamic IP resolution.
+- **A5 (Config Status)**: Documented active vs WP6 keys in `configs/system.yaml`.
+- **A6 (Certificates)**: Aligned `traffic/tls_server.py` and `scripts/gen_certs.sh` on common SAN (10.0.2.10, 127.0.0.1, localhost).
+- **Environment**: Added `.gitattributes` (LF endings), `requirements.txt`, `requirements-linux.txt`.
 
-### What was done
+## Evidence (V1 Executed)
+- `pytest tests/test_generator.py`: 5 passed (test_device_sends_multiple_messages_one_connection, test_slow_profile_sends_multiple_messages, test_reconnect_connection_mode, test_persistent_reconnect_after_msgs, test_time_scale_speeds_up).
+- `pytest tests/test_topology_parse.py`: 2 passed (YAML structure verified 12 devices, bash list parser verified).
 
-- **F1 fixed:** `benign_iot_generator.py` — moved `wait = max(0.1, random.gauss(...))` before the log line that uses it. Added `result_holder` parameter for testability.
-- **F2 fixed (topology):** `scripts/topology.sh` now reads `configs/devices.yaml` and creates one network namespace per device (14 device namespaces + attacker + srv = 16 total). Each device has a unique IP in 10.0.1.0/24.
-- **F2 fixed (config):** `configs/devices.yaml` maps device_id → IP → class → profile for 14 devices across 4 classes (sensor×4, plug×3, thermostat×3, camera×2).
-- **F13 fixed:** `traffic/certs/server.key` and `server.crt` removed from git tracking. `.gitignore` updated. `scripts/gen_certs.sh` generates certs at runtime. Note: the old key remains in git history — it was a throwaway self-signed test key, not a production secret.
-- **F14 fixed:** README rewritten to honestly state what works (topology, TLS server, fixed generator) and what is missing (model, verdict cache, drift guard, datasets, etc.).
-- **Test suite:** `tests/test_generator.py` starts a local TLS server, runs a device for ~5–8 s, asserts ≥5 messages on one connection and zero F1-type exceptions.
-- **Makefile:** `make test` runs the unit tests.
-- **This document** (`docs/PROGRESS.md`) created.
+## Not Run (V2 / Linux required)
+- `scripts/topology.sh create|teardown|show`: requires Linux root + iproute2.
+- `scripts/xdp.sh attach`: requires Linux root + BCC + kernel headers.
+- `scripts/demo.sh`: requires Linux namespaces and XDP.
 
-### What was NOT run (environment limitation)
-
-- `topology.sh create` was NOT run (requires Linux with root + iproute2). The script is written and tested for syntax but not executed.
-- XDP-related scripts were NOT run (same reason).
-
-### Open risks
-
-- The demo script (`scripts/demo.sh`) still references the old topology (iot1 namespace). It will break until updated in a later WP.
-- The `tls_server.py` still has `ensure_certs()` which generates certs in-place; this is fine for now but `gen_certs.sh` is the canonical path.
-
-## Remaining 40% (not in scope for 60%)
-
-- Gateway VM with hard CPU/RAM cgroup limits
-- Raspberry Pi 4/5 or OpenWrt real-device validation
-- libbpf/CO-RE precompiled loader (replace BCC runtime compilation)
-- Full ablation matrix across all N, model, threshold, drift combinations
-- Extended datasets (CIC-IoT-2023, CIC-IDS2018 slice)
-- Paper writing
-- JA3/JA4 handshake-metadata ablation
-
+## Remaining 40% (Post-60% Scope)
+- Gateway VM with hard cgroup CPU/RAM limits
+- Raspberry Pi 4/5 hardware validation
+- libbpf / CO-RE precompiled bytecode loader
+- Extended public datasets (full CIC-IDS2018 220GB, full CIC-IoT-2023)
+- Paper writing and camera-ready drafting

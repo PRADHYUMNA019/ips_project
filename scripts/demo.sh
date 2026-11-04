@@ -13,11 +13,11 @@ sudo ./scripts/topology.sh teardown >/dev/null 2>&1 || true
 sudo ./scripts/topology.sh create
 
 echo -e "\n  \033[1mNetwork Topology Overview:\033[0m"
-echo -e "    - Subnet LAN: \033[32m10.0.1.0/24\033[0m (iot1: 10.0.1.2, iot2: 10.0.1.3, attacker: 10.0.1.4)"
+echo -e "    - Subnet LAN: \033[32m10.0.1.0/24\033[0m (12 devices: sensor-01..04, plug-01..03, therm-01..03, cam-01..02; attacker: 10.0.1.4)"
 echo -e "    - Gateway   : \033[33m10.0.1.1 (v-lan-gw) <--> 10.0.2.1 (v-wan-gw)\033[0m [Inline Router]"
 echo -e "    - Subnet WAN: \033[34m10.0.2.0/24\033[0m (srv: 10.0.2.10:8883)"
-echo -e "  \033[32m[OK] Verifying end-to-end IP routing (iot1 -> srv):\033[0m"
-sudo ip netns exec iot1 ping -c 2 -W 1 10.0.2.10 || true
+echo -e "  \033[32m[OK] Verifying end-to-end IP routing (sensor-01 -> srv):\033[0m"
+sudo ip netns exec sensor-01 ping -c 2 -W 1 10.0.2.10 || true
 
 echo -e "\n\033[1;33m>>> [STAGE 2/6] Starting TLS 1.3/1.2 Encrypted Server (Port 8883) <<<\033[0m"
 sudo ip netns exec srv nohup python3 traffic/tls_server.py > results/logs/server.log 2>&1 &
@@ -25,16 +25,16 @@ sleep 1.5
 echo -e "  \033[32m[OK] TLS Server online in netns 'srv' (Listening on 10.0.2.10:8883)\033[0m"
 echo -e "       Log output: \033[90mresults/logs/server.log\033[0m"
 
-echo -e "\n\033[1;33m>>> [STAGE 3/6] Starting Benign IoT Telemetry Fleet (7 Devices, 5 Classes) <<<\033[0m"
-sudo ip netns exec iot1 nohup python3 traffic/benign_iot_generator.py 600 > results/logs/benign.log 2>&1 &
+echo -e "\n\033[1;33m>>> [STAGE 3/6] Starting Benign IoT Telemetry Fleet (12 Devices, 4 Classes) <<<\033[0m"
+sudo ip netns exec sensor-01 nohup python3 traffic/benign_iot_generator.py --device-from-config sensor-01 --duration 600 > results/logs/benign_sensor01.log 2>&1 &
+sudo ip netns exec plug-01 nohup python3 traffic/benign_iot_generator.py --device-from-config plug-01 --duration 600 > results/logs/benign_plug01.log 2>&1 &
 sleep 2
-echo -e "  \033[32m[OK] 7 simulated IoT devices active:\033[0m"
+echo -e "  \033[32m[OK] Simulated IoT device fleet active across isolated namespaces:\033[0m"
 echo -e "       - Smart Cameras (High throughput, bursty: ~800-1400B)"
 echo -e "       - Smart Thermostats (Periodic telemetry: ~15s interval)"
 echo -e "       - Smart Plugs (Periodic power draw: ~30s interval)"
-echo -e "       - Smart Door Locks (Event driven telemetry: ~60s interval)"
 echo -e "       - Temperature Sensors (Periodic telemetry: ~10s interval)"
-echo -e "       Log output: \033[90mresults/logs/benign.log\033[0m"
+echo -e "       Log output: \033[90mresults/logs/benign_sensor01.log\033[0m"
 
 echo -e "\n\033[1;33m>>> [STAGE 4/6] Fast-Path Kernel Enforcement Benchmark (xdp_v1 + drop_map) <<<\033[0m"
 sudo ./scripts/xdp.sh attach || true
@@ -46,8 +46,8 @@ sudo ./scripts/block_ip.sh block 10.0.1.4 || true
 echo -e "  \033[1m3. Testing Attacker connectivity AFTER blocking (Expect 100% loss):\033[0m"
 sudo ip netns exec attacker ping -c 2 -W 1 10.0.2.10 || true
 
-echo -e "\n  \033[1m4. Testing Benign IoT (10.0.1.2) connectivity (Expect 0% loss):\033[0m"
-sudo ip netns exec iot1 ping -c 2 -W 1 10.0.2.10 || true
+echo -e "\n  \033[1m4. Testing Benign IoT (sensor-01: 10.0.1.10) connectivity (Expect 0% loss):\033[0m"
+sudo ip netns exec sensor-01 ping -c 2 -W 1 10.0.2.10 || true
 
 # Clean up baseline fast-path module
 sudo ./scripts/block_ip.sh unblock 10.0.1.4 >/dev/null 2>&1 || true

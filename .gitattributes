@@ -1,0 +1,10 @@
+# Ensure shell scripts, python files, C sources, YAML and Makefiles use LF on checkout
+*.sh text eol=lf
+*.py text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+Makefile text eol=lf
+pytest.ini text eol=lf

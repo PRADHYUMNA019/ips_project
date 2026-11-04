@@ -13,7 +13,7 @@ echo -e "\033[1;36m=============================================================
 echo -e "\033[1;36m    GATEWAY BIRD'S-EYE VIEW: REAL-TIME PACKET FLOW MONITOR (Interface: $IFACE)         \033[0m"
 echo -e "\033[1;36m========================================================================================\033[0m"
 echo -e "\033[1mNetwork Map:\033[0m"
-echo -e "  - Benign Devices : \033[32m10.0.1.2 (iot1)\033[0m, \033[32m10.0.1.3 (iot2)\033[0m"
+echo -e "  - Benign Devices : \033[32m10.0.1.10-10.0.1.41 (Fleet defined in configs/devices.yaml)\033[0m"
 echo -e "  - Attacker Device: \033[31m10.0.1.4 (attacker - periodic C2 beaconing)\033[0m"
 echo -e "  - Gateway Router : \033[33m10.0.1.1 (v-lan-gw) <--> 10.0.2.1 (v-wan-gw)\033[0m"
 echo -e "  - WAN Server     : \033[34m10.0.2.10:8883 (srv - TLS Echo Service)\033[0m"
@@ -23,11 +23,21 @@ echo -e "\033[1;36m-------------------------------------------------------------
 
 # Sniff packets on gateway interface and format each packet live
 sudo tcpdump -l -n -nn -i "$IFACE" -t 2>/dev/null | python3 -u -c '
-import sys, re, time
+import sys, re, time, yaml, os
+
+# Load benign IPs from devices.yaml if available
+benign_ips = set()
+cfg_path = os.path.join(os.path.dirname(__file__), "..", "configs", "devices.yaml")
+try:
+    with open(cfg_path) as f:
+        cfg = yaml.safe_load(f)
+        for dev in cfg.get("devices", []):
+            benign_ips.add(dev["ip"])
+except Exception:
+    benign_ips = {f"10.0.1.{i}" for i in range(10, 50)}
 
 for line in sys.stdin:
     line = line.strip()
-    # Match IP packets: IP 10.0.1.4.54320 > 10.0.2.10.8883: Flags [P.], length 16
     m = re.search(r"IP ([\d\.]+)\.([\w]+) > ([\d\.]+)\.([\w]+): (.*)length (\d+)", line)
     ts = time.strftime("%H:%M:%S")
     if m:
@@ -38,7 +48,7 @@ for line in sys.stdin:
         # Determine classification
         if "10.0.1.4" in (s_ip, d_ip):
             tag = "\033[1;31m[MALICIOUS: C2 BEACON]\033[0m"
-        elif "10.0.1.2" in (s_ip, d_ip) or "10.0.1.3" in (s_ip, d_ip):
+        elif s_ip in benign_ips or d_ip in benign_ips:
             tag = "\033[1;32m[BENIGN IoT TELEMETRY]\033[0m"
         else:
             tag = "\033[33m[GATEWAY ROUTED]\033[0m"

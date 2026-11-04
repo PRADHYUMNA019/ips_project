@@ -195,6 +195,7 @@ def test_slow_profile_sends_multiple_messages(tls_server):
         "payload_size": (48, 96),
         "burst_probability": 0.0,
         "burst_count": (0, 0),
+        "reconnect_after_msgs": (50, 100),
     }
     result = {}
     t = threading.Thread(
@@ -209,4 +210,88 @@ def test_slow_profile_sends_multiple_messages(tls_server):
         f"Slow profile sent only {result['msg_count']} messages in 8 s"
     )
     assert result["connections"] == 1
+
+
+def test_reconnect_connection_mode(tls_server):
+    """A reconnect device should open one connection per message (A4)."""
+    PROFILES["_test_reconnect"] = {
+        "interval_s": (0.1, 0.02),
+        "payload_size": (32, 64),
+        "burst_probability": 0.0,
+        "burst_count": (0, 0),
+        "reconnect_after_msgs": (10, 20),
+    }
+    result = {}
+    t = threading.Thread(
+        target=run_iot_device,
+        args=("test-reconn", "_test_reconnect", tls_server.host, tls_server.port),
+        kwargs={
+            "duration_s": 1.5,
+            "result_holder": result,
+            "connection_type": "reconnect",
+        },
+    )
+    t.start()
+    t.join(timeout=10)
+
+    assert result["msg_count"] >= 3, f"Expected >= 3 messages, got {result.get('msg_count')}"
+    assert result["connections"] == result["msg_count"], (
+        f"Expected {result['msg_count']} connections, got {result['connections']}"
+    )
+
+
+def test_persistent_reconnect_after_msgs(tls_server):
+    """A persistent device should reconnect cleanly after reconnect_after_msgs (A4)."""
+    PROFILES["_test_periodic_reconn"] = {
+        "interval_s": (0.05, 0.01),
+        "payload_size": (32, 64),
+        "burst_probability": 0.0,
+        "burst_count": (0, 0),
+        "reconnect_after_msgs": (3, 3),  # reconnect every 3 msgs
+    }
+    result = {}
+    t = threading.Thread(
+        target=run_iot_device,
+        args=("test-p-reconn", "_test_periodic_reconn", tls_server.host, tls_server.port),
+        kwargs={
+            "duration_s": 1.5,
+            "result_holder": result,
+            "connection_type": "persistent",
+        },
+    )
+    t.start()
+    t.join(timeout=10)
+
+    assert result["msg_count"] >= 6, f"Expected >= 6 msgs, got {result.get('msg_count')}"
+    expected_conns = (result["msg_count"] // 3) + (1 if result["msg_count"] % 3 != 0 else 0)
+    assert result["connections"] >= 2, (
+        f"Expected multiple connections due to reconnect_after_msgs=3, got {result['connections']}"
+    )
+
+
+def test_time_scale_speeds_up(tls_server):
+    """--time-scale 0.1 should speed up intervals by ~10x (A4)."""
+    PROFILES["_test_scale"] = {
+        "interval_s": (0.5, 0.05),
+        "payload_size": (32, 64),
+        "burst_probability": 0.0,
+        "burst_count": (0, 0),
+        "reconnect_after_msgs": (50, 50),
+    }
+    res_fast = {}
+    t1 = threading.Thread(
+        target=run_iot_device,
+        args=("test-scale-fast", "_test_scale", tls_server.host, tls_server.port),
+        kwargs={
+            "duration_s": 1.2,
+            "result_holder": res_fast,
+            "time_scale": 0.1,  # 0.05s intervals -> ~15-20 msgs in 1.2s
+        },
+    )
+    t1.start()
+    t1.join(timeout=10)
+
+    assert res_fast["msg_count"] >= 8, (
+        f"Expected >= 8 messages with time_scale=0.1, got {res_fast.get('msg_count')}"
+    )
 

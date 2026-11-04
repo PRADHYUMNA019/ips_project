@@ -25,27 +25,30 @@ SRV_IP="${WAN_PREFIX}.10"
 # ---------------------------------------------------------------------------
 parse_devices() {
   local in_devices=0
-  while IFS= read -r line; do
-    # Trim leading whitespace for easier matching
-    local trimmed="${line#"${line%%[![:space:]]*}"}"
-
-    # Detect the "devices:" top-level key
-    if [[ "$trimmed" == "devices:" ]]; then
+  local current_id=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Top-level keys start at column 0 (no leading whitespace)
+    if [[ "$line" =~ ^devices: ]]; then
       in_devices=1
       continue
-    fi
-
-    # Exit the devices block when a new top-level key appears
-    if [[ $in_devices -eq 1 && "$trimmed" =~ ^[a-z] && ! "$trimmed" =~ ^- ]]; then
+    elif [[ $in_devices -eq 1 && "$line" =~ ^[a-zA-Z0-9_]+: ]]; then
+      # Hit another top-level key like attacker: or server:
       in_devices=0
+      break
     fi
 
     if [[ $in_devices -eq 1 ]]; then
-      if [[ "$trimmed" =~ ^-[[:space:]]*device_id:[[:space:]]*(.+) ]]; then
+      local trimmed="${line#"${line%%[![:space:]]*}"}"
+      if [[ "$trimmed" =~ ^-[[:space:]]*device_id:[[:space:]]*[\"\']?([^\"\'[:space:]]+) ]]; then
+        current_id="${BASH_REMATCH[1]}"
+      elif [[ "$trimmed" =~ ^device_id:[[:space:]]*[\"\']?([^\"\'[:space:]]+) ]]; then
         current_id="${BASH_REMATCH[1]}"
       fi
       if [[ "$trimmed" =~ ^ip:[[:space:]]*[\"\']?([0-9.]+) ]]; then
-        echo "${current_id} ${BASH_REMATCH[1]}"
+        if [[ -n "$current_id" ]]; then
+          echo "${current_id} ${BASH_REMATCH[1]}"
+          current_id=""
+        fi
       fi
     fi
   done < "$DEVICES_YAML"
@@ -154,5 +157,6 @@ case "${1:-}" in
   create)   create ;;
   teardown) teardown ;;
   show)     show ;;
-  *) echo "usage: $0 create|teardown|show" ;;
+  list)     parse_devices ;;
+  *) echo "usage: $0 create|teardown|show|list" ;;
 esac

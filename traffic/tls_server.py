@@ -26,13 +26,62 @@ def ensure_certs():
         os.makedirs(CERTS_DIR, exist_ok=True)
     if not os.path.exists(CERT) or not os.path.exists(KEY):
         logger.info(f"Generating self-signed certificate in {CERTS_DIR}...")
-        cmd = [
-            "openssl", "req", "-x509", "-newkey", "rsa:2048",
-            "-keyout", KEY, "-out", CERT, "-days", "365",
-            "-nodes", "-subj", "/CN=10.0.2.10"
-        ]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        logger.info("Certificate generated successfully.")
+        try:
+            from cryptography import x509
+            from cryptography.x509.oid import NameOID
+            from cryptography.hazmat.primitives import hashes, serialization
+            from cryptography.hazmat.primitives.asymmetric import rsa
+            import datetime, ipaddress
+
+            key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            subject = issuer = x509.Name([
+                x509.NameAttribute(NameOID.COMMON_NAME, u"10.0.2.10"),
+            ])
+            cert = (
+                x509.CertificateBuilder()
+                .subject_name(subject)
+                .issuer_name(issuer)
+                .public_key(key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(datetime.datetime.now(datetime.timezone.utc))
+                .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365))
+                .add_extension(
+                    x509.SubjectAlternativeName([
+                        x509.IPAddress(ipaddress.IPv4Address("10.0.2.10")),
+                        x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+                        x509.DNSName(u"localhost"),
+                    ]),
+                    critical=False,
+                )
+                .sign(key, hashes.SHA256())
+            )
+            with open(KEY, "wb") as f:
+                f.write(key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.TraditionalOpenSSL,
+                    encryption_algorithm=serialization.NoEncryption(),
+                ))
+            with open(CERT, "wb") as f:
+                f.write(cert.public_bytes(serialization.Encoding.PEM))
+            logger.info("Certificate generated successfully (pure Python cryptography).")
+        except ImportError:
+            cmd = [
+                "openssl", "req", "-x509", "-newkey", "rsa:2048",
+                "-keyout", KEY, "-out", CERT, "-days", "365",
+                "-nodes", "-subj", "/CN=10.0.2.10",
+                "-addext", "subjectAltName = IP:10.0.2.10,IP:127.0.0.1,DNS:localhost"
+            ]
+            try:
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                # fallback without -addext if openssl is older
+                cmd_fallback = [
+                    "openssl", "req", "-x509", "-newkey", "rsa:2048",
+                    "-keyout", KEY, "-out", CERT, "-days", "365",
+                    "-nodes", "-subj", "/CN=10.0.2.10"
+                ]
+                subprocess.run(cmd_fallback, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            logger.info("Certificate generated successfully (openssl CLI).")
 
 
 def handle_client(conn, addr):
