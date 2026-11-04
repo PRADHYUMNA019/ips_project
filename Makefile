@@ -45,7 +45,8 @@ data-audit:
 	python datasets/audit_pcap.py datasets/raw --out docs/DATA_CARD.md
 
 features:
-	@echo "WP4: not yet implemented"
+	@echo "Extracting features from pcaps..."
+	python -c "import os, glob; [os.system(f'python ips/offline/pcap_to_flows.py {p} --out {p}.csv') for p in glob.glob('results/**/*.pcap', recursive=True)]"
 
 train:
 	@echo "WP5: not yet implemented"

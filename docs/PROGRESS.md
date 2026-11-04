@@ -16,8 +16,8 @@
 | 2 | `docs/spec.md`, `docs/LIMITATIONS.md`, `docs/related_work_todo.md`, `docs/TODO_USER.md` | WP1 | ✅ DONE (V1) | All 4 specification and honesty documents authored and verified |
 | 3 | `docs/DATA_CARD.md`, adapters, audit scripts | WP2 | ✅ DONE (V1) | V1: `pytest tests/test_dataset_adapters.py` (6 passed); `audit_pcap.py`, `DATA_CARD.md`, adapters (CESNET, TQH, Kitsune), download scripts; V3: real downloads marked in `TODO_USER.md` |
 | 4 | Labelled TLS testbed captures with manifest, services, attacks A1–A5 | WP3 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_manifest.py` (1 passed); services (HTTPS/MQTT), attacks A1–A5, `run_experiment.sh`, `collect.sh`; V2: `NOT RUN (Linux required)` |
-| 5 | Shared feature implementation (`ips/features.py`), shortcut guard | WP4 | In Progress | |
-| 6 | Offline detection (IF/AE/Kitsune-style), EVT calibration, INT8 quantization | WP5 | Pending | |
+| 5 | Shared feature implementation (`ips/features.py`), shortcut guard | WP4 | ✅ DONE (V1) | V1: `pytest tests/test_features.py` (4 passed); dimension 3N+8 verified, shortcut guard enforced, golden pcap fixture matches; `ips/offline/pcap_to_flows.py` |
+| 6 | Offline detection (IF/AE/Kitsune-style), EVT calibration, INT8 quantization | WP5 | In Progress | |
 | 7 | Kernel v2 (`ebpf/ips_engine.c`), verdict cache, LRU state, tier-0 guard | WP6 | Pending | |
 | 8 | Closed loop v2 (`ips/engine`), watchdog, measurement harness | WP7 | Pending | |
 | 9 | Drift guard (ADWIN, G1–G4 checks, scenarios S1–S5) | WP8 | Pending | |
