@@ -95,3 +95,13 @@ The fundamental unit of evaluation is the **bidirectional flow**, evaluated at v
    - Throughput (iperf3 Mbps).
    - Gateway CPU utilization (%) and RSS memory (MB).
 
+<!-- SPLIT_TABLE_START -->
+### Session-Disjoint Split Table (`ips/data/build_splits.py`)
+
+| Split Role | Flow Count | Allowed Families | Integrity Check |
+|------------|------------|------------------|-----------------|
+| `train` | NOT RUN (needs real data) | Benign only (`is_attack == 0`) | Session-disjoint, no attack-window flows |
+| `calibration` | NOT RUN (needs real data) | Benign only (`is_attack == 0`) | EVT / Conformal threshold fit (`min_calibration_flows=3000`) |
+| `validation` | NOT RUN (needs real data) | Benign + DEV families (`A1, A2, A5`) | Held-out zero-day families (`A3_c2, A4_exfil`) strictly excluded |
+| `test` | NOT RUN (needs real data) | Benign test session + Held-out families (`A3_c2, A4_exfil`) | Evaluated once per LOFO fold |
+<!-- SPLIT_TABLE_END -->
