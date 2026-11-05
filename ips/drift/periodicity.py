@@ -125,3 +125,4 @@ class SlowC2Tracker:
             "spectral_peak_ratio": res["spectral_peak_ratio"],
             "mean_interval_s": res["mean_interval"],
         }
+

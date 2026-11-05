@@ -70,3 +70,4 @@ python3 "$REPO_DIR/ips/eval/equivalence.py" \
     --pcap "$PCAP_FILE" \
     --events "$EVENTS_FILE" \
     --out "$OUT_DIR/report.md"
+

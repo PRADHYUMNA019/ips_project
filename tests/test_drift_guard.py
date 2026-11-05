@@ -95,3 +95,4 @@ def test_s1_benign_drift_and_s3_boiling_frog_and_s4_coordinated(tmp_path):
     s4_no_g4 = df[(df["scenario"] == "S4_coordinated_multi_device_poisoning") & (df["method"] == "no_G4")].iloc[0]
     s4_guarded = df[(df["scenario"] == "S4_coordinated_multi_device_poisoning") & (df["method"] == "guarded")].iloc[0]
     assert s4_guarded["post_drift_attack_tpr"] > s4_no_g4["post_drift_attack_tpr"]
+

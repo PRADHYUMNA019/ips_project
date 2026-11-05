@@ -61,7 +61,7 @@ eval-system:
 	python ips/eval/harness.py
 
 reproduce:
-	@echo "WP9: not yet implemented"
+	python ips/eval/reproduce.py
 
 # ---------------------------------------------------------------------------
 # Cleanup

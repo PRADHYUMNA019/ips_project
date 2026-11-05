@@ -91,3 +91,4 @@ finally:
 PYEOF
 
 echo "[+] XDP self-test completed successfully."
+

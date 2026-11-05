@@ -314,3 +314,4 @@ def event_to_dict(ev) -> Dict[str, Any]:
         "dirs": [int(ev.dirs[i]) for i in range(vlen)],
         "iat_ns": [int(ev.iat_ns[i]) for i in range(iat_count)],
     }
+

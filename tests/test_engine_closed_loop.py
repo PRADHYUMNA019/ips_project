@@ -147,3 +147,4 @@ def test_attack_leakage_and_bootstrap_ci():
     mean_v, lo, hi = compute_bootstrap_ci([10.0, 12.0, 14.0, 16.0, 18.0])
     assert mean_v == pytest.approx(14.0)
     assert lo <= mean_v <= hi
+
