@@ -44,3 +44,16 @@ This document records architectural, experimental, and empirical limitations of 
 - **Small Device Fleets**:
   - Device classes with fewer than 3 devices cannot reliably compute cross-device quorum ($\rho \times K \ge 2$). For these classes, automated adaptation is disabled and alerts require operator confirmation.
 
+---
+
+## 5. Dataset & Calibration Boundaries (WP2b, C9, B5, B6)
+- **CESNET-TLS-Year22 Anonymised IPs (`B5`)**:
+  - CESNET-TLS-Year22 hashes endpoint IP addresses daily and lacks persistent IoT device identities. Consequently, when evaluating multi-week natural benign drift on CESNET (`ips/drift/scenarios.py:evaluate_cesnet_natural_drift`), **only G1 (tail-kurtosis), G3 (non-periodicity), G4 (anchor-canary validation), and EVT recalibration apply** — **G2 (cross-device quorum) is inapplicable and is never claimed from CESNET**.
+- **Public Dataset Protocol Scope (`A3, B6`)**:
+  - Public datasets are used strictly **offline** (never replayed through the XDP gateway).
+  - `IoT-23` is used **strictly for cross-domain benign generalisation** on the three real-hardware captures (`CTU-Honeypot-Capture-4-1` Philips Hue, `5-1` Amazon Echo, `7-1` Somfy Doorlock); its malware captures (e.g., `CTU-IoT-Malware-Capture-7-1` Linux.Mirai) are predominantly plaintext Telnet/HTTP/IRC/scan traffic and are strictly rejected by `datasets/adapters/iot23_adapter.py`.
+  - `Kitsune` pcaps are truncated at 200 bytes (`snaplen=200`); `ips/offline/pcap_to_flows.py` computes payload lengths from IP/TCP/UDP header fields (`ip.len - ip.hl*4 - tcp.off*4`) rather than captured buffer slice length.
+- **Split-Conformal Sample Floor (`C9 / N9`)**:
+  - Distribution-free split-conformal calibration guarantees finite-sample $\text{FPR} \le \alpha$ under exchangeability **only when $\alpha \ge 1/(n+1)$** on a calibration set of size $n$. For extreme tail targets below $1/(n+1)$ (e.g., $\alpha = 10^{-4}$ with $n < 10{,}000$), conformal runs out of order statistics (`valid_regime=False`), and parametric POT/GPD Extreme Value Theory (`ips/models/evt.py`) is required.
+
+

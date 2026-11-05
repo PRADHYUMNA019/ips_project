@@ -17,7 +17,7 @@ TARGET_STAGE="${1:-ALL}"
 declare -A STAGE_STATUS
 declare -A STAGE_TIME
 declare -A STAGE_NOTES
-STAGES=(S0 S1 S2 S3 S4 S5 S6 S7 S8 S9 S10)
+STAGES=(S0 S1 S2 S3 S4 S5 S5b S6 S6b S7 S8 S8b S9 S10 S11)
 
 run_stage() {
     local sid="$1"
@@ -133,9 +133,19 @@ stage_S5() {
     python3 -m pytest tests/test_engine_closed_loop.py -k "test_enforce_per_flow_drop_and_ttl_expiry or test_fast_path_bypass_ablation" -v
 }
 
+stage_S5b() {
+    cd "$REPO_DIR"
+    python3 -m pytest tests/test_engine_closed_loop.py -k "test_progressive_checkpoints_early_drop_late_bypass" -v
+}
+
 stage_S6() {
     cd "$REPO_DIR"
     bash scripts/equivalence_test.sh
+}
+
+stage_S6b() {
+    cd "$REPO_DIR"
+    python3 -m pytest tests/test_schema_and_equivalence.py -k "test_multi_checkpoint_equivalence" -v
 }
 
 stage_S7() {
@@ -148,6 +158,11 @@ stage_S8() {
     python3 -m pytest tests/test_engine_closed_loop.py -k "test_watchdog_load_shedding_and_cooldown_recovery" -v
 }
 
+stage_S8b() {
+    cd "$REPO_DIR"
+    bash scripts/netem_sweep.sh --dry-run
+}
+
 stage_S9() {
     cd "$REPO_DIR"
     python3 ips/eval/harness.py --smoke
@@ -158,17 +173,26 @@ stage_S10() {
     python3 ips/drift/scenarios.py --out-dir "$REPO_DIR/results/smoke"
 }
 
-run_stage "S0"  "Environment & Package Check"        stage_S0
-run_stage "S1"  "Python V1 Unit Test Suite"          stage_S1
-run_stage "S2"  "14-Namespace Topology & Routing"    stage_S2
-run_stage "S3"  "TLS Services & Persistent Generator" stage_S3
-run_stage "S4"  "XDP v2 Attach & Bidirectional Maps" stage_S4
-run_stage "S5"  "Per-5-Tuple Verdict & TTL Expiry"   stage_S5
-run_stage "S6"  "Kernel-vs-Offline Equivalence (N6)" stage_S6
-run_stage "S7"  "Experiment Manifest & Capture"      stage_S7
-run_stage "S8"  "Closed-Loop Engine & Watchdog"      stage_S8
-run_stage "S9"  "System Harness & Bypass Ablation"   stage_S9
-run_stage "S10" "Drift Guard Scenarios S1-S5"        stage_S10
+stage_S11() {
+    cd "$REPO_DIR"
+    python3 -m ips.data.build_splits --check
+}
+
+run_stage "S0"  "Environment & Package Check"                stage_S0
+run_stage "S1"  "Python V1 Unit Test Suite"                  stage_S1
+run_stage "S2"  "14-Namespace Topology & Routing"            stage_S2
+run_stage "S3"  "TLS Services & Persistent Generator"        stage_S3
+run_stage "S4"  "XDP v2 Attach & Bidirectional Maps"         stage_S4
+run_stage "S5"  "Per-5-Tuple Verdict & TTL Expiry"           stage_S5
+run_stage "S5b" "Progressive Checkpoints [4,8,16] (C1)"      stage_S5b
+run_stage "S6"  "Kernel-vs-Offline Equivalence (N6)"         stage_S6
+run_stage "S6b" "Multi-Checkpoint Equivalence [4,8,16]"      stage_S6b
+run_stage "S7"  "Experiment Manifest & Capture"              stage_S7
+run_stage "S8"  "Closed-Loop Engine & Watchdog"              stage_S8
+run_stage "S8b" "Netem Impairment & Feature Ablations (C11)" stage_S8b
+run_stage "S9"  "System Harness, Bypass & Harm (N2/C10)"     stage_S9
+run_stage "S10" "Drift Guard S1-S5 & Cost-of-Evasion (C3)"   stage_S10
+run_stage "S11" "Dataset Split Integrity & Leakage (WP2b)"   stage_S11
 
 # Write results/verify/REPORT.md
 {

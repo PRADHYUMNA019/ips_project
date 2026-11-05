@@ -52,6 +52,13 @@ def generate_results_md(out_path: str = OUT_MD):
     models_df = _load_real_csv(os.path.join(offline_dir, "eval_models.csv"))
     lofo_df = _load_real_csv(os.path.join(offline_dir, "eval_families_lofo.csv"))
     quant_df = _load_real_csv(os.path.join(offline_dir, "quantization_table.csv"))
+    prog_df = _load_real_csv(os.path.join(offline_dir, "progressive_pareto.csv"))
+    cross_df = _load_real_csv(os.path.join(offline_dir, "cross_domain_iot23.csv"))
+    evas_df = _load_real_csv(os.path.join(offline_dir, "evasion_cost_curve.csv"))
+    calib_df = _load_real_csv(os.path.join(offline_dir, "calibration_curve.csv"))
+    imp_df = _load_real_csv(os.path.join(offline_dir, "netem_impairment.csv"))
+    contam_df = _load_real_csv(os.path.join(offline_dir, "contamination_study.csv"))
+    cesnet_df = _load_real_csv(os.path.join(offline_dir, "cesnet_natural_drift.csv"))
     sys_df = _load_real_csv(sys_csv)
     drift_df = _load_real_csv(drift_csv)
 
@@ -127,6 +134,28 @@ def generate_results_md(out_path: str = OUT_MD):
         lines.append(drift_df.to_markdown(index=False))
     else:
         lines.append("**Status**: `NOT RUN (needs real data) — no real results yet`")
+
+    for sec_num, sec_title, sec_df, extra_note in [
+        (7, "Progressive Multi-Checkpoint Inference (`[4, 8, 16]`, C1 / N7)", prog_df, None),
+        (8, "Cross-Domain Benign Generalisation (`Testbed <-> IoT-23`, B6)", cross_df, None),
+        (9, "White-Box Adaptive-Attacker Cost-of-Evasion Curve (`Q=200`, C3 / N8)", evas_df, None),
+        (10, "Split-Conformal vs EVT Tail Threshold Calibration (C9 / N9)", calib_df, None),
+        (11, "Network-Impairment Robustness & Feature Ablation (C11 / N11)", imp_df, None),
+        (12, "Training-Set Contamination & Trimmed-Loss Mitigation (C12 / N12)", contam_df, None),
+        (
+            13,
+            "CESNET-TLS-Year22 Multi-Week Natural Benign Drift (B5)",
+            cesnet_df,
+            "> **Note (B5)**: CESNET has hashed IPs and no device identities; only G1, G3, G4, and EVT recalibration apply here — G2 (cross-device quorum) is never claimed from CESNET.",
+        ),
+    ]:
+        lines.extend(["", f"## {sec_num}. {sec_title}", ""])
+        if extra_note:
+            lines.extend([extra_note, ""])
+        if sec_df is not None:
+            lines.append(sec_df.to_markdown(index=False))
+        else:
+            lines.append("**Status**: `NOT RUN (needs real data) — no real results yet`")
 
     lines.append("")
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)

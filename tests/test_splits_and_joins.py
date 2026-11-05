@@ -105,3 +105,4 @@ def test_build_splits_cli_and_cross_domain(tmp_path):
     assert "cross_domain_fpr" in df_cd.columns
     assert "ks_statistic" in df_cd.columns
     assert "top_3_shift_features" in df_cd.columns
+

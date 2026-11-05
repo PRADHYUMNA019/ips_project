@@ -38,3 +38,4 @@
 - Exact column names and IPT time units (seconds vs milliseconds vs microseconds) inside CESNET-TLS-Year22 parquet/CSV files (`UNVERIFIED SCHEMA` warning in `datasets/adapters/cesnet_adapter.py`).
 - Exact flow counts per weekly CESNET file (read `stats-dataset.json` after download; never state flow counts from memory).
 - Exact Zenodo download URL path if record `21523144` redirects.
+

@@ -40,7 +40,7 @@ pip install -r requirements.txt
 
 ## 2. Running the Automated Verification (`scripts/verify_linux.sh`)
 
-Run the 11-stage automated verification script first. It tests your Linux environment (`S0`), unit tests (`S1`), 14-namespace topology (`S2`), TLS services (`S3`), bidirectional XDP v2 attachment (`S4`), per-5-tuple verdict cache and TTL expiration (`S5`), 50-flow kernel-vs-offline equivalence (`S6`), experiment manifests (`S7`), closed-loop watchdog (`S8`), system harness (`S9`), and drift guard scenarios (`S10`).
+Run the 15-stage automated verification script first (`S0..S11`). It tests your Linux environment (`S0`), unit tests (`S1`), 14-namespace topology (`S2`), TLS services (`S3`), bidirectional XDP v2 attachment (`S4`), per-5-tuple verdict cache and TTL expiration (`S5`), progressive checkpoints `[4, 8, 16]` (`S5b`), 50-flow kernel-vs-offline equivalence (`S6`), multi-checkpoint equivalence (`S6b`), experiment manifests (`S7`), closed-loop watchdog (`S8`), netem impairment & feature ablations (`S8b`), system harness & operational harm (`S9`), drift guard scenarios & cost-of-evasion curve (`S10`), and dataset split integrity (`S11`).
 
 ```bash
 sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" bash scripts/verify_linux.sh
@@ -50,11 +50,11 @@ sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" bash scripts/verify_linux.sh
   ```bash
   cat results/verify/REPORT.md
   ```
-- **What `PASS` looks like**: Every stage `S0` through `S10` shows `**PASS**` in the Markdown table.
-- **How to re-run a single failed stage** (for example, `S4` or `S6`):
+- **What `PASS` looks like**: Every stage `S0` through `S11` (including `S5b, S6b, S8b`) shows `**PASS**` in the Markdown table.
+- **How to re-run a single failed stage** (for example, `S5b` or `S11`):
   ```bash
-  sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" bash scripts/verify_linux.sh S4
-  sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" bash scripts/verify_linux.sh S6
+  sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" bash scripts/verify_linux.sh S5b
+  sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" bash scripts/verify_linux.sh S11
   ```
 - **If a stage fails**: Paste `results/verify/REPORT.md` and the specific `results/verify/S<N>.log` back into the chat so the exact line can be fixed.
 
@@ -115,12 +115,28 @@ cat results/equivalence/report.md
 sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" python3 ips/eval/harness.py --out-dir results/system
 ```
 
-### Step 3.9: Run Concept Drift & Poisoning-Aware Guard Evaluation (N1 + N4)
+### Step 3.9: Run Concept Drift, Cost-of-Evasion Curve, Contamination & Netem Studies (WP8, C3, C11, C12)
 ```bash
 python3 ips/drift/scenarios.py --out-dir results/offline
+python3 ips/eval/contamination.py --early-n 16
+sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" bash scripts/netem_sweep.sh
 ```
 
-### Step 3.10: Compile `docs/RESULTS.md` (`make reproduce`)
+### Step 3.10: Download & Run Public Datasets (CESNET-TLS-Year22, TQH-C2 Testbed D, IoT-23 Benign)
+Public datasets are evaluated strictly **offline** (never replayed through XDP):
+```bash
+# 1. TQH-C2 Testbed D (Merlin HTTP/2 C2 over TLS, 1.8 GB pcap + features + labels, SHA-256 verified)
+bash datasets/download_tqh_c2.sh
+
+# 2. CESNET-TLS-Year22 (multi-week natural benign TLS drift; G1/G3/G4 + EVT only, G2 disabled)
+bash datasets/download_cesnet.sh
+
+# 3. IoT-23 Benign Captures ONLY (CTU-Honeypot-Capture-4-1 Hue, 5-1 Echo, 7-1 Somfy)
+bash datasets/download_iot23.sh
+python3 -m ips.eval.cross_domain --early-n 16 --out results/offline/cross_domain_iot23.csv
+```
+
+### Step 3.11: Compile `docs/RESULTS.md` (`make reproduce`)
 ```bash
 make reproduce
 cat docs/RESULTS.md

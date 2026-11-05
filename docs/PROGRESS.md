@@ -1,6 +1,6 @@
 # Progress Tracker (`docs/PROGRESS.md`)
 
-> Last updated: P4 / WP8 upgrades complete (`ips/drift/evasion_cost.py` C3/N8 adaptive-attacker cost-of-evasion curve & `evaluate_cesnet_natural_drift` B5 without G2); next: P5 (WP9 consolidation & Part E: `scripts/verify_linux.sh` stages S5b/S6b/S8b/S11, `docs/USER_TEST_GUIDE.md`, `docs/PAPER_OUTLINE.md`, `docs/LIMITATIONS.md`, `docs/RESULTS.md`, and final report)
+> Last updated: P0–P5 complete (Part A corrections A1–A8, Part B WP2b dataset plan/splits/label-joins/cross-domain, Part C/D WP5–WP9 progressive checkpoints `[4,8,16]`, split-conformal/EVT calibration, C10 operational harm, C11 netem impairment, C12 contamination study, C3 white-box cost-of-evasion curve, B5 CESNET drift mode, and Part E verification harness `S0..S11`)
 > Platform detected: Windows (`platform.system() == "Windows"`, win32, Python 3.12.3)
 
 ## Verification Classes
@@ -21,23 +21,25 @@
 | 7 | Kernel v2 (`ebpf/ips_engine.c`), progressive checkpoint emission (`[4,8,16]`), verdict cache, LRU state, tier-0 guard | WP6 / C1, N6 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_schema_and_equivalence.py` (6 passed); `ips/engine/schema.py` (`SCHEMA_VERSION 3`), `ebpf/ips_engine.c` (`emitted_mask`, `checkpoint_idx`), per-checkpoint `ips/eval/equivalence.py`; V2: `CODE WRITTEN, NOT RUN (Linux required)` |
 | 8 | Closed loop v2 (`ips/engine`), progressive verdicts, watchdog, C10 operational harm, C11 netem impairment | WP7 / C1, C10, C11 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_engine_closed_loop.py` (7 passed); `ips/engine/engine.py` (early drop/late bypass), `ips/eval/harness.py` (C10 operational harm), `scripts/netem_sweep.sh`, `ips/eval/impairment.py` (C11 feature ablations); V2: `CODE WRITTEN, NOT RUN (Linux required)` |
 | 9 | Drift guard (ADWIN, G1–G4 checks, scenarios S1–S5, C3 cost-of-evasion curve, B5 CESNET drift) | WP8 / C3, B5 | PARTIAL (V1 DONE, V3 needs real data) | V1: `pytest tests/test_drift_guard.py` (4 passed); `ips/drift/periodicity.py`, `ips/drift/guard.py`, `ips/drift/scenarios.py`, `ips/drift/evasion_cost.py` (C3 Q=200 adaptive curve & B5 CESNET no-G2 mode); V3: `NOT RUN (needs real data)` |
-| 10 | `make reproduce`, `docs/RESULTS.md`, `scripts/verify_linux.sh`, `docs/USER_TEST_GUIDE.md`, `docs/PAPER_OUTLINE.md`, `docs/ARCHITECTURE.md` | WP9 / Part C | PARTIAL (V1 DONE, V2/V3 pending Linux VM run) | V1: `pytest tests/test_reproduce.py` (2 passed); all 40 V1 unit tests pass; `scripts/verify_linux.sh`, `docs/USER_TEST_GUIDE.md`, `docs/RESULTS.md`, `docs/PAPER_OUTLINE.md`, `docs/ARCHITECTURE.md` complete |
+| 10 | `make reproduce`, `docs/RESULTS.md`, `scripts/verify_linux.sh`, `docs/USER_TEST_GUIDE.md`, `docs/PAPER_OUTLINE.md`, `docs/ARCHITECTURE.md` | WP9 / Part E | PARTIAL (V1 DONE, V2/V3 pending Linux VM run) | V1: `pytest tests/test_reproduce.py` (3 passed); all 54 V1 unit tests pass; `scripts/verify_linux.sh` (15 stages `S0..S11`), `docs/USER_TEST_GUIDE.md`, `docs/RESULTS.md`, `docs/PAPER_OUTLINE.md`, `docs/ARCHITECTURE.md` complete |
 
 ## V1 Unit Test Summary (Executed on Host)
 - `tests/test_generator.py`: 5 passed
 - `tests/test_topology_parse.py`: 2 passed
-- `tests/test_dataset_adapters.py`: 6 passed
+- `tests/test_shell_permissions.py`: 1 passed
+- `tests/test_dataset_adapters.py`: 7 passed
+- `tests/test_splits_and_joins.py`: 3 passed
 - `tests/test_manifest.py`: 1 passed
-- `tests/test_features.py`: 4 passed
-- `tests/test_models.py`: 7 passed
-- `tests/test_schema_and_equivalence.py`: 5 passed
-- `tests/test_engine_closed_loop.py`: 5 passed
-- `tests/test_drift_guard.py`: 3 passed
-- `tests/test_reproduce.py`: 2 passed
-- **Total V1 Unit Tests**: **40 passed, 0 failed**
+- `tests/test_features.py`: 6 passed
+- `tests/test_models.py`: 9 passed
+- `tests/test_schema_and_equivalence.py`: 6 passed
+- `tests/test_engine_closed_loop.py`: 7 passed
+- `tests/test_drift_guard.py`: 4 passed
+- `tests/test_reproduce.py`: 3 passed
+- **Total V1 Unit Tests**: **54 passed, 0 failed**
 
 ## Not Run Here (V2 Linux Required / V3 Real Data Required)
-- `sudo bash scripts/verify_linux.sh` (Stages S0, S2–S4, S6 require Linux root + network namespaces + BCC)
+- `sudo bash scripts/verify_linux.sh` (Stages S0, S2–S4, S6, S6b require Linux root + network namespaces + BCC + `tc netem`)
 - `scripts/collect.sh` & `scripts/run_experiment.sh` (live TLS testbed pcap collection)
 - Public dataset downloads (`datasets/download_{cesnet,tqh_c2,kitsune,iot23}.sh`)
 
