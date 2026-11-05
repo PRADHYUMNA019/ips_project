@@ -58,7 +58,7 @@ eval-offline:
 	python ips/models/eval_offline.py --test-data $(TEST_DATA) --card models/model_card.json
 
 eval-system:
-	@echo "WP7: not yet implemented"
+	python ips/eval/harness.py
 
 reproduce:
 	@echo "WP9: not yet implemented"

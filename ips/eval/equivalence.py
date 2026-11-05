@@ -175,8 +175,8 @@ def compare_flows(
                 diff_us = abs(k_iats[i] - p_iats[i]) / 1000.0
                 iat_diffs_us.append(diff_us)
 
-            k_vec = build_early_vector(k_sizes, k_dirs, k_iats, early_n=early_n)
-            p_vec = build_early_vector(p_sizes, p_dirs, p_iats, early_n=early_n)
+            k_vec = build_early_vector(k_sizes, k_dirs, [x / 1e6 for x in k_iats], early_n=early_n)
+            p_vec = build_early_vector(p_sizes, p_dirs, [x / 1e6 for x in p_iats], early_n=early_n)
             vec_max_diffs.append(float(np.max(np.abs(k_vec - p_vec))))
 
     size_match_rate = (size_exact_matches / matched_pairs) if matched_pairs > 0 else 0.0

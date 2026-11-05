@@ -54,9 +54,9 @@ sudo ./scripts/block_ip.sh unblock 10.0.1.4 >/dev/null 2>&1 || true
 sudo ./scripts/xdp.sh detach >/dev/null 2>&1 || true
 echo -e "\n  \033[32m[OK] Fast-path kernel enforcement verified. Detached baseline module.\033[0m"
 
-echo -e "\n\033[1;33m>>> [STAGE 5/6] Automated Two-Tier Inline IPS Closed-Loop Live Run <<<\033[0m"
-echo -e "  [1] Starting eBPF RingBuffer Engine in background..."
-sudo python3 engine/ringbuf_engine.py > results/logs/engine.log 2>&1 &
+echo -e "\n\033[1;33m>>> [STAGE 5/6] Automated Two-Tier Inline IPS Closed-Loop Live Run (v2 Engine) <<<\033[0m"
+echo -e "  [1] Starting IPS Closed-Loop Engine v2 (ips.engine) in gw namespace..."
+sudo ip netns exec gw python3 -m ips.engine --config configs/system.yaml --mode enforce > results/logs/engine.log 2>&1 &
 ENGINE_PID=$!
 sleep 2.5
 
@@ -64,14 +64,16 @@ if ! ps -p "$ENGINE_PID" >/dev/null 2>&1; then
     echo -e "  \033[91m[WARN] Engine could not attach. Checking logs:\033[0m"
     cat results/logs/engine.log
 else
-    echo -e "  \033[32m[OK] Engine online (PID: $ENGINE_PID). XDP attached to v-lan-gw.\033[0m"
-    echo -e "  [2] Launching 20ms Periodic TLS Beaconing from Attacker (10.0.1.4)..."
-    echo -e "      (Watch beacons 1..12 succeed, then beacon 13+ get rejected by IPS)\n"
+    echo -e "  \033[32m[OK] Engine v2 online (PID: $ENGINE_PID). XDP attached to v-lan-gw and v-wan-gw.\033[0m"
+    echo -e "  [2] Launching TLS Attack Traffic from Attacker (10.0.1.4)..."
+    echo -e "      (Watch early payload packets 1..12 trigger EARLY_FLOW, then packet 13+ get dropped by verdict_map)\n"
     sudo ip netns exec attacker python3 traffic/attack_beacon.py 20 5 || true
 
-    echo -e "\n  [3] Real-Time Log from eBPF IPS Engine (Feature Extraction & Interception):"
+    echo -e "\n  [3] Real-Time Telemetry from IPS Engine v2:"
     echo -e "\033[90m----------------------------------------------------------------------------------------\033[0m"
-    if [ -f results/logs/engine.log ]; then
+    if [ -f results/logs/engine_v2.jsonl ]; then
+        tail -n 20 results/logs/engine_v2.jsonl
+    elif [ -f results/logs/engine.log ]; then
         tail -n 35 results/logs/engine.log
     fi
     echo -e "\033[90m----------------------------------------------------------------------------------------\033[0m"
