@@ -1,5 +1,7 @@
 # Drift-Resilient Inline IPS for Encrypted Traffic
 
+> **Scope note (evaluation):** All measurements are obtained on an emulated resource-constrained gateway (Linux network namespaces on a laptop/VM; user-space engine limited by cgroups; XDP in generic mode, unconstrained). No physical embedded device was measured. Title wording is pending guide approval (TITLE_DECISION_PENDING).
+
 > **Status: 30% → 60% rebuild in progress (branch `wp0-fix-30pct`).**
 > See [`docs/PROGRESS.md`](docs/PROGRESS.md) for the current checklist.
 
@@ -39,7 +41,7 @@ network where traffic is TLS-encrypted and payloads cannot be inspected.
 - Drift detection and poisoning-aware guard (WP8)
 - Public dataset integration (WP2)
 - Resource-constrained evaluation (remaining 40%)
-- Raspberry Pi / real device validation (remaining 40%)
+- Physical embedded hardware validation (planned post-60% scope)
 
 ## Quick start (demo of the 30% baseline)
 

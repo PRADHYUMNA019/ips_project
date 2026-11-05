@@ -1,5 +1,7 @@
 # System Specification: Drift-Resilient On-Device Inline IPS
 
+> **Scope note (evaluation):** All measurements are obtained on an emulated resource-constrained gateway (Linux network namespaces on a laptop/VM; user-space engine limited by cgroups; XDP in generic mode, unconstrained). No physical embedded device was measured. Title wording is pending guide approval (TITLE_DECISION_PENDING).
+
 ## 1. Scope & Protocol Boundaries
 - **In-Scope**:
   - Transport Layer Security (TLS 1.2 and TLS 1.3) encapsulated over TCP IPv4.
@@ -16,11 +18,11 @@
 ## 2. Target Platform & Hardware Resource Profiles
 The system targets gateway-class embedded hardware acting as an inline network bridge or router between LAN and WAN:
 
-| Profile | Target Hardware Analogue | Emulated Resource Limit (User Space Engine) |
+| Profile | Target Resource Profile | Emulated Resource Limit (User Space Engine) |
 |---|---|---|
-| **Profile S (Small)** | Low-end MIPS/ARM router (e.g. MT7621, Pi Zero 2W) | 25–30% of 1 CPU core, 256 MB RAM (`MemoryMax=256M`, `CPUQuota=30%`) |
-| **Profile M (Medium)** | Mid-tier residential gateway (e.g. Raspberry Pi 4) | 50% of 1 CPU core, 512 MB RAM (`MemoryMax=512M`, `CPUQuota=50%`) |
-| **Profile L (Large)** | Enterprise/industrial IoT edge gateway (x86_64 edge box) | 100% of 2 vCPUs, 1024 MB RAM (`MemoryMax=1G`, `CPUQuota=200%`) |
+| **Profile S (Small)** | Low-resource gateway analogue (cgroup: 25–30% CPU, 256MB RAM) | 25–30% of 1 CPU core, 256 MB RAM (`MemoryMax=256M`, `CPUQuota=30%`) |
+| **Profile M (Medium)** | Mid-resource gateway analogue (cgroup: 50% CPU, 512MB RAM) | 50% of 1 CPU core, 512 MB RAM (`MemoryMax=512M`, `CPUQuota=50%`) |
+| **Profile L (Large)** | High-resource gateway analogue (cgroup: 200% CPU, 1GB RAM) | 100% of 2 vCPUs, 1024 MB RAM (`MemoryMax=1G`, `CPUQuota=200%`) |
 
 *Note (H4/H5)*: In this phase, hardware limits are enforced on the user-space Python engine using systemd cgroups (`systemd-run`). The eBPF/XDP fast path executes in kernel context and is not throttled by cgroups.
 

@@ -12,40 +12,40 @@
 
 | # | Item | WP | Status | Evidence |
 |---|------|----|--------|----------|
-| 1 | Repaired generator, per-device IPs, no committed secrets, truthful README | WP0 / WP0b / A1, A5 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_generator.py tests/test_topology_parse.py tests/test_shell_permissions.py` (8 passed); MQTT/HTTPS real-protocol traffic + per-class TLS; V2: `scripts/topology.sh` rewritten for 12 devices / 14 namespaces, `CODE WRITTEN, NOT RUN (Linux required)` |
-| 2 | `docs/spec.md`, `docs/LIMITATIONS.md`, `docs/related_work_todo.md`, `docs/TODO_USER.md` | WP1 | ✅ DONE (V1) | All 4 specification and honesty documents authored and verified; `ips/smoke/synth.py` created (Rule B0, deterministic RNG A8) |
-| 3 | `docs/DATA_CARD.md`, `docs/DATASET_PLAN.md`, adapters, splits, label joins, cross-domain eval | WP2 / WP2b / A2, A3, A7 | PARTIAL (V1 DONE, V3 needs real data) | V1: `pytest tests/test_dataset_adapters.py tests/test_splits_and_joins.py` (10 passed); `docs/DATASET_PLAN.md`, `ips/data/build_splits.py` (assertions a-d), `ips/data/label_join.py`, `ips/eval/cross_domain.py`, adapters (CESNET, TQH, Kitsune, IoT-23); V3: `NOT RUN (needs real data)` |
+| 1 | Repaired generator, per-device IPs, no committed secrets, truthful README | WP0 / WP0b / A1, A5 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_generator.py tests/test_topology_parse.py tests/test_shell_permissions.py` (9 passed); MQTT/HTTPS real-protocol traffic + per-class TLS; V2: `scripts/topology.sh` rewritten for 12 devices (`10.0.1.10–10.0.1.41`) / 14 namespaces, `CODE WRITTEN, NOT RUN (Linux required)` |
+| 2 | `docs/spec.md`, `docs/LIMITATIONS.md`, `docs/related_work_todo.md`, `docs/TODO_USER.md` | WP1 | ✅ DONE (V1) | All 4 specification and honesty documents authored and verified; `ips/smoke/synth.py` created (Rule B0, deterministic RNG A8); scope notes attached to prevent hardware overstatement |
+| 3 | `docs/DATA_CARD.md`, `docs/DATASET_PLAN.md`, adapters, splits, label joins, cross-domain eval | WP2 / WP2b / A2, A3, A7, B7 | PARTIAL (V1 DONE, V3 needs real data) | V1: `pytest tests/test_dataset_adapters.py tests/test_splits_and_joins.py tests/test_cross_eval.py` (10 passed); `docs/DATASET_PLAN.md`, `ips/data/build_splits.py` (assertions a-d), `ips/data/label_join.py`, `ips/eval/cross_domain.py`, leakage sentinel guard, adapters (CESNET, TQH, Kitsune, IoT-23); V3: `NOT RUN (needs real data)` |
 | 4 | Labelled TLS testbed captures with manifest, services, attacks A1–A5 | WP3 / A6 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_manifest.py` (1 passed); services (HTTPS/MQTT), attacks A1–A5, `scripts/run_experiment.sh`, `scripts/collect.sh` (process-group teardown & YAML parsing); V2: `CODE WRITTEN, NOT RUN (Linux required)` |
-| 5 | Shared feature implementation (`ips/features.py`), shortcut guard, truncated & reused-tuple pcap parsing | WP4 / A4 | ✅ DONE (V1) | V1: `pytest tests/test_features.py` (6 passed); dimension `3N+8` verified, shortcut guard enforced, IP/TCP header payload length & TCP instance splitting verified |
-| 6 | Offline detection (IF/AE/Kitsune-style), progressive checkpoints (`[4,8,16]`), Split-Conformal & EVT calibration, contamination study, INT8 quantization | WP5 / C1, C9, C12 | PARTIAL (V1 DONE, V3 needs real data) | V1: `pytest tests/test_models.py` (9 passed); per-checkpoint AE `[4,8,16]`, Split-Conformal (`alpha >= 1/(n+1)`), EVT POT/GPD, C12 contamination & trimmed-loss (`ips/eval/contamination.py`), multi-seed LOFO; V3: `NOT RUN (needs real data)` |
-| 7 | Kernel v2 (`ebpf/ips_engine.c`), progressive checkpoint emission (`[4,8,16]`), verdict cache, LRU state, tier-0 guard | WP6 / C1, N6 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_schema_and_equivalence.py` (6 passed); `ips/engine/schema.py` (`SCHEMA_VERSION 3`), `ebpf/ips_engine.c` (`emitted_mask`, `checkpoint_idx`), per-checkpoint `ips/eval/equivalence.py`; V2: `CODE WRITTEN, NOT RUN (Linux required)` |
-| 8 | Closed loop v2 (`ips/engine`), progressive verdicts, watchdog, C10 operational harm, C11 netem impairment | WP7 / C1, C10, C11 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_engine_closed_loop.py` (7 passed); `ips/engine/engine.py` (early drop/late bypass), `ips/eval/harness.py` (C10 operational harm), `scripts/netem_sweep.sh`, `ips/eval/impairment.py` (C11 feature ablations); V2: `CODE WRITTEN, NOT RUN (Linux required)` |
-| 9 | Drift guard (ADWIN, G1–G4 checks, scenarios S1–S5, C3 cost-of-evasion curve, B5 CESNET drift) | WP8 / C3, B5 | PARTIAL (V1 DONE, V3 needs real data) | V1: `pytest tests/test_drift_guard.py` (4 passed); `ips/drift/periodicity.py`, `ips/drift/guard.py`, `ips/drift/scenarios.py`, `ips/drift/evasion_cost.py` (C3 Q=200 adaptive curve & B5 CESNET no-G2 mode); V3: `NOT RUN (needs real data)` |
-| 10 | `make reproduce`, `docs/RESULTS.md`, `scripts/verify_linux.sh`, `docs/USER_TEST_GUIDE.md`, `docs/PAPER_OUTLINE.md`, `docs/ARCHITECTURE.md` | WP9 / Part E | PARTIAL (V1 DONE, V2/V3 pending Linux VM run) | V1: `pytest tests/test_reproduce.py` (3 passed); all 54 V1 unit tests pass; `scripts/verify_linux.sh` (15 stages `S0..S11`), `docs/USER_TEST_GUIDE.md`, `docs/RESULTS.md`, `docs/PAPER_OUTLINE.md`, `docs/ARCHITECTURE.md` complete |
+| 5 | Shared feature implementation (`ips/features.py`), shortcut guard, direction asymmetry, truncated & reused-tuple pcap parsing | WP4 / A4, B3 | ✅ DONE (V1) | V1: `pytest tests/test_features.py` (7 passed); dimension `3N+8` verified, shortcut guard enforced, direction asymmetry (`frac_upstream`) verified (M2 killed), IP/TCP header payload length & TCP instance splitting verified |
+| 6 | Offline detection (IF/AE/Kitsune-style), progressive checkpoints (`[4,8,16]`), Split-Conformal & EVT calibration, contamination study, INT8 quantization | WP5 / C1, C9, C12, B4, B5, B6 | PARTIAL (V1 DONE, V3 needs real data) | V1: `pytest tests/test_models.py` (11 passed); per-checkpoint AE `[4,8,16]`, Split-Conformal exact order statistic test (M8 killed), EVT POT/GPD known-answer test (B6), C12 contamination & trimmed-loss, multi-seed LOFO; V3: `NOT RUN (needs real data)` |
+| 7 | Kernel v2 (`ebpf/ips_engine.c`), progressive checkpoint emission (`[4,8,16]`), connection reuse re-init, safe submit, verdict cache, LRU state, tier-0 guard | WP6 / C1, N6, A1, A2, A4 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_schema_and_equivalence.py` (8 passed); `ips/engine/schema.py` (`SCHEMA_VERSION 4`), `ebpf/ips_engine.c` (`emitted_mask`, `checkpoint_idx`, FIN/RST/idle reinit, retry counter), stages `S6c-S6e` in `scripts/verify_linux.sh`; V2: `CODE WRITTEN, NOT RUN (Linux required)` |
+| 8 | Closed loop v2 (`ips/engine`), progressive verdicts, sticky drop, safe ringbuf parser, watchdog, C10 operational harm, C11 netem impairment | WP7 / C1, C10, C11, B1, B2, B8, C2 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_engine_closed_loop.py` (11 passed); safe ringbuf parser (B1 / DEF-04), confusion matrix test (B2 / M15 killed), sticky DROP verdict (C2), wire-to-engine leakage reconciliation (B8), watchdog fail-open shedding; V2: `CODE WRITTEN, NOT RUN (Linux required)` |
+| 9 | Drift guard (ADWIN, G1–G4 checks, scenarios S1–S5, C3 cost-of-evasion curve, B5 CESNET drift) | WP8 / C3, B5, C1d, C1e | PARTIAL (V1 DONE, V3 needs real data) | V1: `pytest tests/test_drift_guard.py` (4 passed); `ips/drift/periodicity.py`, `ips/drift/guard.py` (G2 small-class fail-closed limitation), `ips/drift/scenarios.py` (DEV-only canary), `ips/drift/evasion_cost.py`; V3: `NOT RUN (needs real data)` |
+| 10 | `make reproduce`, `docs/RESULTS.md`, `scripts/verify_linux.sh`, `docs/USER_TEST_GUIDE.md`, `docs/PAPER_OUTLINE.md`, `docs/ARCHITECTURE.md` | WP9 / Part E | PARTIAL (V1 DONE, V2/V3 pending Linux VM run) | V1: `pytest tests/test_reproduce.py` (2 passed); all 63 V1 unit tests pass; `scripts/verify_linux.sh` (18 stages `S0..S11`), `docs/USER_TEST_GUIDE.md`, `docs/RESULTS.md`, `docs/PAPER_OUTLINE.md`, `docs/ARCHITECTURE.md` complete |
 
 ## V1 Unit Test Summary (Executed on Host)
-- `tests/test_generator.py`: 5 passed
-- `tests/test_topology_parse.py`: 2 passed
-- `tests/test_shell_permissions.py`: 1 passed
-- `tests/test_dataset_adapters.py`: 7 passed
-- `tests/test_splits_and_joins.py`: 3 passed
-- `tests/test_manifest.py`: 1 passed
-- `tests/test_features.py`: 6 passed
-- `tests/test_models.py`: 9 passed
-- `tests/test_schema_and_equivalence.py`: 6 passed
-- `tests/test_engine_closed_loop.py`: 7 passed
+- `tests/test_cross_eval.py`: 1 passed
+- `tests/test_dataset_adapters.py`: 6 passed
 - `tests/test_drift_guard.py`: 4 passed
-- `tests/test_reproduce.py`: 3 passed
-- **Total V1 Unit Tests**: **54 passed, 0 failed**
+- `tests/test_engine_closed_loop.py`: 11 passed
+- `tests/test_features.py`: 7 passed
+- `tests/test_generator.py`: 5 passed
+- `tests/test_manifest.py`: 1 passed
+- `tests/test_models.py`: 11 passed
+- `tests/test_reproduce.py`: 2 passed
+- `tests/test_schema_and_equivalence.py`: 8 passed
+- `tests/test_shell_permissions.py`: 2 passed
+- `tests/test_splits_and_joins.py`: 3 passed
+- `tests/test_topology_parse.py`: 2 passed
+- **Total V1 Unit Tests**: **63 passed, 0 failed**
 
 ## Not Run Here (V2 Linux Required / V3 Real Data Required)
-- `sudo bash scripts/verify_linux.sh` (Stages S0, S2–S4, S6, S6b require Linux root + network namespaces + BCC + `tc netem`)
+- `sudo bash scripts/verify_linux.sh` (Stages S0, S2–S4, S6, S6b, S6c require Linux root + network namespaces + BCC + `tc netem`)
 - `scripts/collect.sh` & `scripts/run_experiment.sh` (live TLS testbed pcap collection)
 - Public dataset downloads (`datasets/download_{cesnet,tqh_c2,kitsune,iot23}.sh`)
 
 ## Remaining 40% (Post-60% Scope)
-- Gateway VM with hard cgroup CPU/RAM limits
-- Raspberry Pi 4/5 hardware validation
-- libbpf / CO-RE precompiled bytecode loader
+- Physical embedded gateway deployment (e.g. Raspberry Pi 4/5 or OpenWrt hardware router)
+- Libbpf / CO-RE precompiled bytecode loader
 - Extended public datasets (full CIC-IDS2018 220GB, full CIC-IoT-2023)
 - Full paper prose and camera-ready formatting

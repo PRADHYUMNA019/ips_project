@@ -73,8 +73,8 @@ finally:
 print("\n" + "\033[1;34m" + "="*80)
 print(f"  [ATTACK RUN SUMMARY]")
 print(f"  Total Beacons Attempted : {n}")
-print(f"  Permitted (Pre-Verdict) : \033[32m{delivered}\033[0m (Observed during first 12 packets)")
-print(f"  Blocked & Intercepted   : \033[1;31m{blocked}\033[0m (Dropped inline by kernel XDP)")
+print(f"  Delivered Beacons       : \033[32m{delivered}\033[0m")
+print(f"  Timed Out / Blocked     : \033[1;31m{blocked}\033[0m (Connection timeout / refused)")
 if n > 0:
-    print(f"  Interception Efficiency : \033[1;32m{(blocked/n)*100:.1f}%\033[0m")
+    print(f"  Connection Timeout Rate : \033[1;32m{(blocked/n)*100:.1f}%\033[0m (Socket timeout rate)")
 print("="*80 + "\033[0m\n")

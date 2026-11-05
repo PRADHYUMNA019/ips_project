@@ -56,4 +56,25 @@ This document records architectural, experimental, and empirical limitations of 
 - **Split-Conformal Sample Floor (`C9 / N9`)**:
   - Distribution-free split-conformal calibration guarantees finite-sample $\text{FPR} \le \alpha$ under exchangeability **only when $\alpha \ge 1/(n+1)$** on a calibration set of size $n$. For extreme tail targets below $1/(n+1)$ (e.g., $\alpha = 10^{-4}$ with $n < 10{,}000$), conformal runs out of order statistics (`valid_regime=False`), and parametric POT/GPD Extreme Value Theory (`ips/models/evt.py`) is required.
 
+---
+
+## 6. Kernel Concurrency & Fast-Path Limitations (A1, A2, A3)
+- **Multi-CPU Concurrency Race on Generic XDP (A3)**:
+  - On multi-core systems with generic XDP or multi-queue NICs/veth pairs, packets from the LAN and WAN sides of the same bidirectional flow may be processed simultaneously on different CPU cores.
+  - BCC/eBPF lacks universal atomic `bpf_spin_lock` across all hash map types; concurrent updates to `struct flow_record` can lead to packet ordering races unless RPS (Receive Packet Steering) or RSS is pinned to steer a canonical 5-tuple to the same CPU core. Evaluated in Stage `S6d` of `scripts/verify_linux.sh`.
+- **Fail-Open Policy Under Load Shedding & Ringbuffer Saturation (A2)**:
+  - When the user-space engine falls behind and load shedding is enabled (`cfg->shed = 1`), or when the BPF ringbuffer is completely saturated, the fast path increments `ckpt_skipped_shed` or `ckpt_retry` and passes the packet without emitting an event (`XDP_PASS`).
+  - The prototype explicitly chooses a **fail-open** design to prevent gateway lockup during DoS volume surges. While this preserves network availability, malicious flows arriving during shedding windows will pass undetected.
+- **Flow Record Lifecycle & Idle Timeout Semantics (A1)**:
+  - To prevent state pollution across connection reuse on the same 5-tuple, `flow_state` entries are re-initialized when a TCP SYN arrives after FIN/RST flags have been observed, or when a connection has idled for longer than `flow_idle_s` (120 seconds).
+  - Connections with keep-alive intervals exceeding 120 seconds will have their flow record reset and will re-trigger checkpoint evaluation upon resume.
+
+---
+
+## 7. Status of Numerical Results in Repository
+- **Synthetic Smoke Data for Pipeline Verification Only (Rule B0 / H1)**:
+  - All numerical results, metrics tables, and CSV exports currently present in `results/smoke/` are generated from synthetic smoke datasets (`ips/smoke/synth.py`) designed strictly to test pipeline execution, data joins, model training loops, and verification scripts.
+  - They do **not** represent final empirical performance, real-world zero-day detection rates, or physical hardware benchmarks. Final research claims require execution on the full physical/real datasets as detailed in `docs/DATASET_PLAN.md`.
+
+
 
