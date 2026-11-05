@@ -148,3 +148,88 @@ def test_attack_leakage_and_bootstrap_ci():
     assert mean_v == pytest.approx(14.0)
     assert lo <= mean_v <= hi
 
+
+def test_progressive_checkpoints_early_drop_late_bypass():
+    """C1 / N7: Verify early DROP at checkpoint 4, CONTINUE at 4 & 8, late BYPASS at 16, and short flow ending at 6."""
+    cfg = load_system_config()
+    cfg["system"]["checkpoints"] = [4, 8, 16]
+    cfg["system"]["early_n"] = 16
+    backend = MockBPFBackend(early_n=16, checkpoints=[4, 8, 16])
+    engine = IPSEngine(config=cfg, backend=backend, mode_override="enforce", bypass_override=True)
+    engine.ort_session = None
+    engine.ckpt_sessions = {}
+    engine.threshold = 0.08
+    engine.ckpt_thresholds = {4: 0.08, 8: 0.08, 16: 0.08}
+
+    now_ns = 1_000_000_000
+
+    # 1. Attack flow on port 60001: dropped at checkpoint 4!
+    emitted_atk = []
+    for p_i in range(10):
+        now_ns += 50_000
+        act, ev = backend.simulate_packet("10.0.1.4", 60001, "10.0.2.10", 8443, "TCP", 1400, 0, now_ns)
+        if ev is not None:
+            dec = engine.handle_early_flow_event(ev, now_ns=now_ns)
+            emitted_atk.append(dec)
+        if p_i >= 4:
+            assert act == "XDP_DROP"
+    assert len(emitted_atk) == 1
+    assert emitted_atk[0]["checkpoint_n"] == 4
+    assert emitted_atk[0]["verdict_written"] == "DROP"
+
+    # 2. Long benign flow on port 40001: CONTINUE at 4 and 8, BYPASS at 16, XDP_PASS_BYPASS for 17..20
+    emitted_ben = []
+    for p_i in range(20):
+        now_ns += 250_000_000
+        act, ev = backend.simulate_packet("10.0.1.11", 40001, "10.0.2.10", 8883, "TCP", 110, p_i % 2, now_ns)
+        if ev is not None:
+            dec = engine.handle_early_flow_event(ev, now_ns=now_ns)
+            emitted_ben.append(dec)
+        if p_i >= 16:
+            assert act == "XDP_PASS_BYPASS"
+    assert [d["checkpoint_n"] for d in emitted_ben] == [4, 8, 16]
+    assert [d["verdict_written"] for d in emitted_ben] == ["CONTINUE", "CONTINUE", "BYPASS"]
+
+    # 3. Short benign flow (6 packets) on port 40002: emits checkpoint 4 (CONTINUE) and finishes without bypass entry
+    emitted_short = []
+    for p_i in range(6):
+        now_ns += 250_000_000
+        act, ev = backend.simulate_packet("10.0.1.12", 40002, "10.0.2.10", 8883, "TCP", 110, p_i % 2, now_ns)
+        if ev is not None:
+            dec = engine.handle_early_flow_event(ev, now_ns=now_ns)
+            emitted_short.append(dec)
+    assert len(emitted_short) == 1
+    assert emitted_short[0]["checkpoint_n"] == 4
+    assert emitted_short[0]["verdict_written"] == "CONTINUE"
+
+
+def test_operational_harm_and_netem_impairment_c10_c11(tmp_path):
+    """C10 & C11: Verify operational-harm translation and netem impairment feature ablations."""
+    from ips.eval.harness import compute_operational_harm_metrics
+    from ips.eval.impairment import run_impairment_study
+    from ips.smoke.synth import generate_smoke_dataset
+
+    harm = compute_operational_harm_metrics(fpr=0.001, drop_ttl_s=60.0, flows_per_device_day=288, fleet_size=12)
+    assert harm["expected_dropped_benign_flows_per_device_day"] == pytest.approx(0.288, abs=1e-4)
+    assert harm["expected_dropped_benign_flows_per_fleet_day"] == pytest.approx(3.456, abs=1e-3)
+    assert harm["time_blocked_per_fp_s"] == 60.0
+    assert harm["recovery_time_s"] > 60.0
+
+    df_tr = generate_smoke_dataset(
+        n_benign=80, n_attack=0, early_n=8, session_id="smoke_c11_tr",
+        out_csv=str(tmp_path / "tr.csv"), seed=401
+    )
+    df_cal = generate_smoke_dataset(
+        n_benign=60, n_attack=0, early_n=8, session_id="smoke_c11_cal",
+        out_csv=str(tmp_path / "cal.csv"), seed=402
+    )
+    df_te = generate_smoke_dataset(
+        n_benign=60, n_attack=30, early_n=8, session_id="smoke_c11_te",
+        out_csv=str(tmp_path / "te.csv"), seed=403
+    )
+    imp_df = run_impairment_study(df_tr, df_cal, df_te, early_n=8, epochs=3, seed=42, out_dir=str(tmp_path))
+    assert len(imp_df) == 15  # 3 ablations * 5 impairment profiles
+    assert set(imp_df["ablation_mode"].unique()) == {"full_features", "no_iat_features", "no_size_features"}
+    assert (tmp_path / "netem_impairment.csv").exists()
+
+

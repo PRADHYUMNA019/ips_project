@@ -82,26 +82,92 @@ def compute_attack_leakage(
     }
 
 
+def compute_operational_harm_metrics(
+    fpr: float,
+    drop_ttl_s: float = 60.0,
+    flows_per_device_day: int = 288,
+    fleet_size: int = 12,
+    mean_reconnect_interval_s: float = 15.0,
+    decisions: List[Dict[str, Any]] = None,
+    attacker_ips: List[str] = None,
+) -> Dict[str, Any]:
+    """
+    Translate statistical flow-level FPR into concrete IoT operational harm (C10 / N10):
+      - expected_dropped_benign_flows_per_device_day
+      - expected_dropped_benign_flows_per_fleet_day
+      - prob_device_blocked_per_day & expected_devices_blocked_per_day
+      - empirical devices_ever_blocked_count (from decisions log if provided)
+      - time_blocked_per_fp_s (drop_ttl_s) and recovery_time_s (time until next connection after drop_ttl_s)
+    """
+    q = max(0.0, min(1.0, float(fpr)))
+    exp_dev_day = q * float(flows_per_device_day)
+    exp_fleet_day = exp_dev_day * float(fleet_size)
+    prob_blocked_day = 1.0 - ((1.0 - q) ** int(flows_per_device_day))
+    exp_devs_blocked_day = float(fleet_size) * prob_blocked_day
+
+    blocked_devices = set()
+    if decisions:
+        atk_set = set(attacker_ips or ["10.0.1.4"])
+        for d in decisions:
+            init_ip = d.get("initiator_ip", d.get("ip_a", ""))
+            if init_ip not in atk_set and bool(d.get("is_anomaly", False)):
+                blocked_devices.add(init_ip)
+
+    return {
+        "expected_dropped_benign_flows_per_device_day": round(exp_dev_day, 4),
+        "expected_dropped_benign_flows_per_fleet_day": round(exp_fleet_day, 4),
+        "prob_device_blocked_per_day": round(prob_blocked_day, 4),
+        "expected_devices_blocked_per_day": round(exp_devs_blocked_day, 4),
+        "devices_ever_blocked_count": len(blocked_devices),
+        "time_blocked_per_fp_s": round(float(drop_ttl_s), 2),
+        "recovery_time_s": round(float(drop_ttl_s) + float(mean_reconnect_interval_s), 2),
+    }
+
+
 def evaluate_flow_decisions(
     decisions: List[Dict[str, Any]],
     attacker_ips: List[str] = None,
+    drop_ttl_s: float = 60.0,
 ) -> Dict[str, Any]:
-    """Compute per-flow TPR, FPR (with Clopper-Pearson CI), F1, and time-to-verdict stats."""
+    """
+    Compute per-flow TPR, FPR (with Clopper-Pearson CI), F1, time-to-verdict stats,
+    and C10 operational-harm metrics. Aggregates progressive checkpoint events by flow 5-tuple.
+    """
     if attacker_ips is None:
         attacker_ips = ["10.0.1.4"]
     attacker_set = set(attacker_ips)
+
+    # Group checkpoint decisions by canonical 5-tuple so progressive checkpoints count once per flow
+    flows_grouped: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
+    for idx, d in enumerate(decisions):
+        fkey = (
+            d.get("ip_a", f"flow_{idx}"),
+            int(d.get("port_a", idx)),
+            d.get("ip_b", ""),
+            int(d.get("port_b", 0)),
+            d.get("proto", "TCP"),
+        )
+        flows_grouped.setdefault(fkey, []).append(d)
 
     tp = fp = tn = fn = 0
     ttv_ms_list = []
     pkts_at_verdict_list = []
 
-    for d in decisions:
-        is_atk_truth = (d.get("initiator_ip") in attacker_set) or (d.get("ip_a") in attacker_set) or (d.get("ip_b") in attacker_set)
-        pred_anom = bool(d.get("is_anomaly", False))
+    for fkey, d_list in flows_grouped.items():
+        first_d = d_list[0]
+        is_atk_truth = (
+            (first_d.get("initiator_ip") in attacker_set)
+            or (first_d.get("ip_a") in attacker_set)
+            or (first_d.get("ip_b") in attacker_set)
+        )
+        anom_decisions = [x for x in d_list if bool(x.get("is_anomaly", False))]
+        pred_anom = len(anom_decisions) > 0
+        verdict_d = anom_decisions[0] if pred_anom else d_list[-1]
+
         if is_atk_truth and pred_anom:
             tp += 1
-            ttv_ms_list.append(float(d.get("time_to_verdict_ms", 0.0)))
-            pkts_at_verdict_list.append(int(d.get("payload_packets_at_verdict", 0)))
+            ttv_ms_list.append(float(verdict_d.get("time_to_verdict_ms", 0.0)))
+            pkts_at_verdict_list.append(int(verdict_d.get("payload_packets_at_verdict", 0)))
         elif is_atk_truth and not pred_anom:
             fn += 1
         elif (not is_atk_truth) and pred_anom:
@@ -116,6 +182,13 @@ def evaluate_flow_decisions(
     prec = (tp / (tp + fp)) if (tp + fp) > 0 else 0.0
     f1 = (2 * prec * tpr / (prec + tpr)) if (prec + tpr) > 0 else 0.0
     fpr_ci_lo, fpr_ci_hi = clopper_pearson_ci(fp, max(1, n_ben), alpha=0.05)
+
+    harm = compute_operational_harm_metrics(
+        fpr=fpr,
+        drop_ttl_s=drop_ttl_s,
+        decisions=decisions,
+        attacker_ips=attacker_ips,
+    )
 
     return {
         "tp": tp,
@@ -132,11 +205,13 @@ def evaluate_flow_decisions(
         "mean_time_to_verdict_ms": round(float(np.mean(ttv_ms_list)), 3) if ttv_ms_list else 0.0,
         "p95_time_to_verdict_ms": round(float(np.percentile(ttv_ms_list, 95)), 3) if ttv_ms_list else 0.0,
         "mean_payload_pkts_at_verdict": round(float(np.mean(pkts_at_verdict_list)), 2) if pkts_at_verdict_list else 0.0,
+        **harm,
     }
 
 
 def simulate_closed_loop_workload(
     early_n: int = 12,
+    checkpoints: List[int] = None,
     bypass_enabled: bool = True,
     mode: str = "enforce",
     n_benign_flows: int = 20,
@@ -147,16 +222,26 @@ def simulate_closed_loop_workload(
 ) -> Dict[str, Any]:
     """
     Run a deterministic workload through IPSEngine + MockBPFBackend to verify
-    closed-loop enforcement, fast-path bypass (N2), and attack-packet leakage.
+    closed-loop enforcement, progressive checkpoints (C1/N7), fast-path bypass (N2),
+    operational-harm metrics (C10/N10), and attack-packet leakage.
     """
     rng = np.random.default_rng(seed)
     cfg = load_system_config()
+    if checkpoints is None:
+        ckpts = [int(early_n)]
+    else:
+        ckpts = sorted([int(x) for x in checkpoints])
+        early_n = max(int(early_n), max(ckpts))
+
     cfg["system"]["early_n"] = early_n
-    backend = MockBPFBackend(early_n=early_n)
+    cfg["system"]["checkpoints"] = ckpts
+    backend = MockBPFBackend(early_n=early_n, checkpoints=ckpts)
     engine = IPSEngine(config=cfg, backend=backend, mode_override=mode, bypass_override=bypass_enabled)
-    # Use a threshold separating benign low-MSE from extreme flood/exfil MSE
+    # Use deterministic fallback reconstruction & threshold separating benign low-MSE from extreme flood/exfil MSE
     engine.ort_session = None
+    engine.ckpt_sessions = {}
     engine.threshold = 0.08
+    engine.ckpt_thresholds = {k: 0.08 for k in ckpts}
 
     now_ns = 1_000_000_000
     proc = psutil.Process(os.getpid())
@@ -189,19 +274,23 @@ def simulate_closed_loop_workload(
                 engine.handle_early_flow_event(ev, now_ns=now_ns)
 
     st = backend.get_stats()
-    flow_metrics = evaluate_flow_decisions(engine.decisions_log, attacker_ips=["10.0.1.4"])
+    drop_ttl_s = float(cfg.get("system", {}).get("drop_ttl_s", 60.0))
+    flow_metrics = evaluate_flow_decisions(engine.decisions_log, attacker_ips=["10.0.1.4"], drop_ttl_s=drop_ttl_s)
+    first_verdict_n = int(round(flow_metrics["mean_payload_pkts_at_verdict"])) if flow_metrics["mean_payload_pkts_at_verdict"] > 0 else ckpts[0]
     leak_metrics = compute_attack_leakage(
         total_attack_pkts_sent=total_atk_sent,
         wan_egress_attack_pkts=wan_egress_atk,
         attack_flows_detected=flow_metrics["tp"],
-        early_n=early_n,
+        early_n=first_verdict_n,
         handshake_pkts_per_flow=0,
     )
 
     pkts_seen = max(1, st["pkts_seen"])
     return {
         "source": "synthetic-smoke",
+        "scheme": f"progressive_{ckpts}" if len(ckpts) > 1 else f"single_N{early_n}",
         "early_n": early_n,
+        "checkpoints": str(ckpts),
         "mode": mode,
         "bypass": "on" if bypass_enabled else "off",
         "pkts_seen": st["pkts_seen"],
@@ -217,7 +306,7 @@ def simulate_closed_loop_workload(
 
 
 def run_ablation_suite_smoke(out_dir: str) -> pd.DataFrame:
-    """Run N2 fast-path bypass and early_n ablation on simulated workload (Rule B0)."""
+    """Run N2 fast-path bypass, C1 progressive checkpoints, and C10 operational-harm ablation (Rule B0)."""
     print("=" * 68)
     print("SMOKE DATA – NOT A RESULT (ips/eval/harness.py simulated workload)")
     print("=" * 68)
@@ -225,8 +314,11 @@ def run_ablation_suite_smoke(out_dir: str) -> pd.DataFrame:
     rows = []
     for n in (4, 8, 12, 16):
         for bypass_flag in (True, False):
-            res = simulate_closed_loop_workload(early_n=n, bypass_enabled=bypass_flag, mode="enforce")
+            res = simulate_closed_loop_workload(early_n=n, checkpoints=[n], bypass_enabled=bypass_flag, mode="enforce")
             rows.append(res)
+    for bypass_flag in (True, False):
+        res_prog = simulate_closed_loop_workload(early_n=16, checkpoints=[4, 8, 16], bypass_enabled=bypass_flag, mode="enforce")
+        rows.append(res_prog)
     df = pd.DataFrame(rows)
     csv_path = os.path.join(out_dir, "system_ablation_smoke.csv")
     df.to_csv(csv_path, index=False)

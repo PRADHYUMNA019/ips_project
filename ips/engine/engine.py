@@ -56,9 +56,14 @@ class MockBPFBackend:
     for deterministic V1 unit testing without Linux root/BCC.
     """
 
-    def __init__(self, early_n: int = 12):
-        self.early_n = early_n
-        self.schemas = make_ctypes_schemas(early_n)
+    def __init__(self, early_n: int = 16, checkpoints: Optional[List[int]] = None):
+        if checkpoints is not None and len(checkpoints) > 0:
+            self.checkpoints = sorted([int(x) for x in checkpoints])
+            self.early_n = max(int(early_n), max(self.checkpoints))
+        else:
+            self.early_n = int(early_n)
+            self.checkpoints = [self.early_n]
+        self.schemas = make_ctypes_schemas(self.early_n)
         self.xdp_mode = "mock-userspace"
         self.verdict_map: Dict[bytes, Tuple[int, int]] = {}  # key_bytes -> (action, expiry_ns)
         self.flow_state: Dict[bytes, Dict[str, Any]] = {}
@@ -143,7 +148,7 @@ class MockBPFBackend:
                 "sizes": [],
                 "dirs": [],
                 "iat_ns": [],
-                "emitted": False,
+                "emitted_mask": 0,
             }
 
         rec = self.flow_state[k]
@@ -156,14 +161,21 @@ class MockBPFBackend:
             rec["dirs"].append(int(direction))
             rec["last_ts_ns"] = now_ns
 
-        if len(rec["sizes"]) == self.early_n and not rec["emitted"]:
-            rec["emitted"] = True
-            if self.cfg["shed"] == 1:
-                return ("XDP_PASS", None)
-            self.stats["events_emitted"] += 1
-            ev = dict(rec)
-            ev["valid_len"] = len(rec["sizes"])
-            return ("XDP_PASS", ev)
+        cur_vlen = len(rec["sizes"])
+        if cur_vlen in self.checkpoints:
+            ckpt_idx = self.checkpoints.index(cur_vlen)
+            if not (rec["emitted_mask"] & (1 << ckpt_idx)):
+                rec["emitted_mask"] |= (1 << ckpt_idx)
+                if self.cfg["shed"] == 1:
+                    return ("XDP_PASS", None)
+                self.stats["events_emitted"] += 1
+                ev = dict(rec)
+                ev["sizes"] = list(rec["sizes"])
+                ev["dirs"] = list(rec["dirs"])
+                ev["iat_ns"] = list(rec["iat_ns"])
+                ev["valid_len"] = cur_vlen
+                ev["checkpoint_idx"] = ckpt_idx
+                return ("XDP_PASS", ev)
 
         return ("XDP_PASS", None)
 
@@ -271,7 +283,19 @@ class IPSEngine:
         eng_cfg = self.config.get("engine", {})
         wd_cfg = eng_cfg.get("watchdog", {})
 
-        self.early_n = int(sys_cfg.get("early_n", 12))
+        raw_ckpts = sys_cfg.get("checkpoints", None)
+        early_n_cfg = sys_cfg.get("early_n", None)
+        if backend is not None and hasattr(backend, "checkpoints") and backend.checkpoints == [backend.early_n] and early_n_cfg == backend.early_n:
+            self.early_n = int(backend.early_n)
+            self.checkpoints = list(backend.checkpoints)
+        elif raw_ckpts and len(raw_ckpts) > 0:
+            self.checkpoints = sorted([int(x) for x in raw_ckpts])
+            self.early_n = max(int(early_n_cfg) if early_n_cfg is not None else max(self.checkpoints), max(self.checkpoints))
+        else:
+            self.early_n = int(early_n_cfg) if early_n_cfg is not None else 12
+            self.checkpoints = [self.early_n]
+
+        self.alpha_spending = str(sys_cfg.get("alpha_spending", "equal"))
         self.mode = mode_override if mode_override is not None else str(sys_cfg.get("mode", "observe"))
         if bypass_override is not None:
             self.bypass_enabled = bool(bypass_override)
@@ -295,12 +319,18 @@ class IPSEngine:
         self.last_stats: Dict[str, int] = {}
         self.last_lag_ms: float = 0.0
 
-        self.backend = backend if backend is not None else MockBPFBackend(self.early_n)
+        self.backend = (
+            backend
+            if backend is not None
+            else MockBPFBackend(early_n=self.early_n, checkpoints=self.checkpoints)
+        )
         self.decisions_log: List[Dict[str, Any]] = []
         self.watchdog_log: List[Dict[str, Any]] = []
 
-        # Load model card & ONNX Runtime session if available
+        # Load model card & ONNX Runtime sessions (global + per-checkpoint) if available
         self.threshold = 0.25
+        self.ckpt_thresholds: Dict[int, float] = {k: 0.25 for k in self.checkpoints}
+        self.ckpt_sessions: Dict[int, Any] = {}
         self.per_class_thresholds: Dict[str, float] = {}
         self.ip_to_class: Dict[str, str] = {}
         self.ort_session = None
@@ -327,6 +357,17 @@ class IPSEngine:
                     for cls_name, info in card.get("per_class_models", {}).items():
                         if "evt_001" in info:
                             self.per_class_thresholds[cls_name] = float(info["evt_001"])
+                tau_key = "tau_front_001" if self.alpha_spending == "front_loaded" else "tau_equal_001"
+                for k_str, cinfo in card.get("checkpoint_models", {}).items():
+                    k_int = int(k_str)
+                    if k_int in self.checkpoints:
+                        self.ckpt_thresholds[k_int] = float(cinfo.get(tau_key, cinfo.get("tau_equal_001", self.threshold)))
+                        c_onnx = cinfo.get("onnx_int8_path", cinfo.get("onnx_fp32_path", ""))
+                        if ort is not None and c_onnx and os.path.exists(c_onnx):
+                            try:
+                                self.ckpt_sessions[k_int] = ort.InferenceSession(c_onnx, providers=["CPUExecutionProvider"])
+                            except Exception:
+                                pass
             except Exception:
                 pass
 
@@ -340,23 +381,29 @@ class IPSEngine:
             except Exception:
                 self.ort_session = None
 
-    def score_vector(self, vec: np.ndarray) -> Tuple[float, np.ndarray, float]:
+    def score_vector(self, vec: np.ndarray, ckpt_n: Optional[int] = None) -> Tuple[float, np.ndarray, float]:
         """
         Score a single normalized early-flow vector (1D float32 array of length 3N+8).
+        Uses the checkpoint-specific ONNX session when available, or deterministic fallback.
         Returns (mse_score, recon_vector, inference_ms).
         """
         t0 = time.perf_counter()
+        n_win = int(ckpt_n) if ckpt_n is not None else self.early_n
         x = vec.reshape(1, -1).astype(np.float32)
-        if self.ort_session is not None:
-            recon = self.ort_session.run(["recon"], {"input": x})[0][0]
+
+        sess = self.ckpt_sessions.get(n_win, None)
+        if sess is None and n_win == self.early_n and self.ort_session is not None and len(vec) == (3 * self.early_n + 8):
+            sess = self.ort_session
+
+        if sess is not None:
+            inp_name = sess.get_inputs()[0].name
+            recon = sess.run(None, {inp_name: x})[0][0]
         else:
             # Deterministic fallback reconstruction when ONNX model file is not present
-            # Expects benign IoT flows to have small payload sizes (~100B) and moderate IATs (~250ms -> log10(2.5e5) ~ 5.4)
             recon = np.copy(vec)
-            recon[: self.early_n] = 0.08
-            recon[2 * self.early_n : 3 * self.early_n - 1] = 5.4
-            # Aggregates: bytes_up, bytes_down, pkts_up, pkts_down, frac_upstream, mean_log_iat, std_log_iat, first_payload_size, valid_len
-            agg_start = 3 * self.early_n - 1
+            recon[:n_win] = 0.08
+            recon[2 * n_win : 3 * n_win - 1] = 5.4
+            agg_start = 3 * n_win - 1
             recon[agg_start + 0] = 0.04   # bytes_up
             recon[agg_start + 1] = 0.04   # bytes_down
             recon[agg_start + 5] = 0.77   # mean_log_iat / 7.0
@@ -368,10 +415,13 @@ class IPSEngine:
 
     def handle_early_flow_event(self, ev_dict: Dict[str, Any], now_ns: Optional[int] = None) -> Dict[str, Any]:
         """
-        Process one EARLY_FLOW event dictionary:
-          1. Extract 3N+8 feature vector via build_early_vector
+        Process one EARLY_FLOW event dictionary across progressive checkpoints (C1 / N7):
+          1. Determine checkpoint window k_win (e.g., 4, 8, or 16) and extract 3*k_win+8 feature vector
           2. Run inference & compute top-3 feature attribution
-          3. Issue BYPASS or DROP verdict into kernel map if mode == 'enforce'
+          3. Apply 'Early DROP, Late BYPASS':
+               - If score > tau_k at ANY checkpoint k: write VERDICT_DROP immediately
+               - Else if k == final checkpoint N_K and bypass_enabled: write VERDICT_BYPASS
+               - Else (intermediate checkpoint k < N_K with benign score): write nothing ('CONTINUE')
           4. Record time_to_verdict_ms and payload_packets_at_verdict (B1)
         """
         if now_ns is None:
@@ -380,18 +430,25 @@ class IPSEngine:
         sizes = ev_dict["sizes"]
         dirs = ev_dict["dirs"]
         iat_ns = ev_dict.get("iat_ns", [])
-        iat_ms = [float(x) / 1e6 for x in iat_ns]
-        vec = build_early_vector(sizes, dirs, iat_ms, early_n=self.early_n)
+        vlen = int(ev_dict.get("valid_len", len(sizes)))
+        k_win = vlen if vlen in self.checkpoints else self.early_n
+        ckpt_idx = int(ev_dict.get("checkpoint_idx", self.checkpoints.index(k_win) if k_win in self.checkpoints else 0))
 
-        score, recon, infer_ms = self.score_vector(vec)
+        iat_ms = [float(x) / 1e6 for x in iat_ns[: max(0, k_win - 1)]]
+        vec = build_early_vector(sizes[:k_win], dirs[:k_win], iat_ms, early_n=k_win)
+        feat_names_k = get_feature_names(k_win)
+
+        score, recon, infer_ms = self.score_vector(vec, ckpt_n=k_win)
         sq_errors = (vec - recon) ** 2
-        top_features = explain_anomaly(sq_errors, self.feature_names, top_k=3)
+        top_features = explain_anomaly(sq_errors, feat_names_k, top_k=3)
 
         init_ip = ev_dict.get("initiator_ip", ev_dict["ip_a"])
         dev_class = self.ip_to_class.get(init_ip, "global")
-        thresh = self.threshold
+        # If self.threshold was explicitly overridden by caller/test, honour it; else use ckpt_thresholds
+        thresh = self.ckpt_thresholds.get(k_win, self.threshold) if self.threshold == 0.25 else self.threshold
 
         is_anomaly = bool(score > thresh)
+        is_final_checkpoint = (k_win >= self.checkpoints[-1])
         first_ts = int(ev_dict.get("first_ts_ns", now_ns))
         last_ts = int(ev_dict.get("last_ts_ns", now_ns))
         flow_observation_ms = max(0.0, (last_ts - first_ts) / 1e6)
@@ -411,9 +468,11 @@ class IPSEngine:
             if is_anomaly:
                 self.backend.set_verdict(fk, VERDICT_DROP, now_ns + self.drop_ttl_ns)
                 verdict_written = "DROP"
-            elif self.bypass_enabled:
+            elif is_final_checkpoint and self.bypass_enabled:
                 self.backend.set_verdict(fk, VERDICT_BYPASS, now_ns + self.bypass_ttl_ns)
                 verdict_written = "BYPASS"
+            elif not is_final_checkpoint:
+                verdict_written = "CONTINUE"
 
         decision = {
             "timestamp_ns": now_ns,
@@ -424,12 +483,15 @@ class IPSEngine:
             "proto": ev_dict.get("proto", "TCP"),
             "initiator_ip": init_ip,
             "device_class": dev_class,
+            "checkpoint_idx": ckpt_idx,
+            "checkpoint_n": k_win,
+            "is_final_checkpoint": is_final_checkpoint,
             "score": round(score, 6),
             "threshold": round(thresh, 6),
             "is_anomaly": is_anomaly,
             "mode": self.mode,
             "verdict_written": verdict_written,
-            "payload_packets_at_verdict": int(ev_dict.get("valid_len", len(sizes))),
+            "payload_packets_at_verdict": vlen,
             "total_packets_at_verdict": int(ev_dict.get("total_pkts", len(sizes))),
             "flow_observation_ms": round(flow_observation_ms, 3),
             "inference_ms": round(infer_ms, 3),
