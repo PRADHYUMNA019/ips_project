@@ -18,7 +18,7 @@ import yaml
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DEFAULT_CONFIG_PATH = os.path.join(REPO_DIR, "configs", "system.yaml")
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 VERDICT_NONE = 0
 VERDICT_BYPASS = 1
@@ -33,7 +33,9 @@ def load_system_config(config_path: str = DEFAULT_CONFIG_PATH) -> Dict[str, Any]
     if not os.path.exists(config_path):
         return {
             "system": {
-                "early_n": 12,
+                "checkpoints": [4, 8, 16],
+                "early_n": 16,
+                "alpha_spending": "equal",
                 "flow_map_max": 4096,
                 "verdict_map_max": 4096,
                 "bypass_ttl_s": 300,
@@ -68,7 +70,8 @@ def load_system_config(config_path: str = DEFAULT_CONFIG_PATH) -> Dict[str, Any]
 def generate_c_header(config: Dict[str, Any] = None) -> str:
     """
     Generate C preprocessor macros consumed by ebpf/ips_engine.c.
-    Guarantees EARLY_N and map capacities come from a single YAML source (F10).
+    Guarantees EARLY_N, progressive checkpoints (C1/N7), and map capacities
+    come from a single YAML source (F10).
     """
     if config is None:
         config = load_system_config()
@@ -76,9 +79,21 @@ def generate_c_header(config: Dict[str, Any] = None) -> str:
     eng_cfg = config.get("engine", {})
     t0_cfg = eng_cfg.get("tier0", {})
 
-    early_n = int(sys_cfg.get("early_n", 12))
+    raw_ckpts = sys_cfg.get("checkpoints", None)
+    early_n_cfg = sys_cfg.get("early_n", None)
+    if raw_ckpts:
+        checkpoints = sorted([int(x) for x in raw_ckpts])
+        early_n = int(early_n_cfg) if early_n_cfg is not None else max(checkpoints)
+        if early_n < max(checkpoints):
+            early_n = max(checkpoints)
+    else:
+        early_n = int(early_n_cfg) if early_n_cfg is not None else 16
+        checkpoints = [early_n]
+
     if early_n < 2 or early_n > 32:
         raise ValueError(f"early_n must be in [2, 32] for BPF stack/verifier safety, got {early_n}")
+    if any(c < 1 or c > early_n for c in checkpoints):
+        raise ValueError(f"All checkpoints must be in [1, {early_n}], got {checkpoints}")
 
     flow_map_max = int(sys_cfg.get("flow_map_max", 4096))
     verdict_map_max = int(sys_cfg.get("verdict_map_max", 4096))
@@ -91,6 +106,11 @@ def generate_c_header(config: Dict[str, Any] = None) -> str:
         "#ifndef IPS_GENERATED_SCHEMA_H",
         "#define IPS_GENERATED_SCHEMA_H",
         f"#define SCHEMA_VERSION {SCHEMA_VERSION}",
+        f"#define NUM_CHECKPOINTS {len(checkpoints)}",
+    ]
+    for i, ckpt in enumerate(checkpoints):
+        lines.append(f"#define CKPT_{i} {ckpt}")
+    lines.extend([
         f"#define EARLY_N {early_n}",
         f"#define EARLY_N_MINUS_1 {early_n - 1}",
         f"#define FLOW_MAP_MAX {flow_map_max}",
@@ -103,7 +123,7 @@ def generate_c_header(config: Dict[str, Any] = None) -> str:
         "#define VERDICT_DROP 2",
         "#endif /* IPS_GENERATED_SCHEMA_H */",
         "",
-    ]
+    ])
     return "\n".join(lines)
 
 
@@ -198,7 +218,7 @@ def make_early_flow_event_cls(early_n: int = 12):
         ("proto", ctypes.c_uint8),
         ("valid_len", ctypes.c_uint8),
         ("flags_seen", ctypes.c_uint8),
-        ("pad1", ctypes.c_uint8),
+        ("checkpoint_idx", ctypes.c_uint8),
         ("ip_a", ctypes.c_uint32),
         ("ip_b", ctypes.c_uint32),
         ("port_a", ctypes.c_uint16),
@@ -299,6 +319,7 @@ def event_to_dict(ev) -> Dict[str, Any]:
         "schema_version": int(ev.schema_version),
         "proto": proto_str,
         "valid_len": vlen,
+        "checkpoint_idx": int(getattr(ev, "checkpoint_idx", 0)),
         "flags_seen": int(ev.flags_seen),
         "ip_a": u32_to_ip(ev.ip_a),
         "port_a": int(ev.port_a),

@@ -131,11 +131,12 @@ def extract_raw_pcap_flows(pcap_path: str, early_n: int = 12, lan_prefix: str = 
 def compare_flows(
     pcap_flows: List[Dict[str, Any]],
     kernel_events: List[Dict[str, Any]],
-    early_n: int = 12,
+    early_n: int = 16,
 ) -> Dict[str, Any]:
     """
     Match offline pcap flows and kernel EARLY_FLOW events by canonical 5-tuple
-    and compute size/direction exact-match rates and IAT error quantiles.
+    across all progressive checkpoints (e.g. k in [4, 8, 16]) and compute
+    size/direction exact-match rates and IAT error quantiles overall and per checkpoint.
     """
     pcap_by_key = defaultdict(list)
     for pf in pcap_flows:
@@ -152,34 +153,51 @@ def compare_flows(
     dir_exact_matches = 0
     iat_diffs_us = []
     vec_max_diffs = []
+    per_ckpt_stats = defaultdict(lambda: {"matched": 0, "size_ok": 0, "dir_ok": 0, "iat_diffs_us": []})
 
     for ckey, k_list in kern_by_key.items():
         p_list = pcap_by_key.get(ckey, [])
-        for idx, ke in enumerate(k_list):
-            if idx >= len(p_list):
-                break
-            pf = p_list[idx]
-            matched_pairs += 1
+        if not p_list:
+            continue
+        inst_idx = 0
+        prev_vlen = 0
+        for ke in k_list:
+            k_vlen = int(ke.get("valid_len", len(ke.get("sizes", []))))
+            k_vlen = min(k_vlen, early_n)
+            # If valid_len resets/decreases, advance to next flow instance on this 5-tuple
+            if prev_vlen > 0 and k_vlen <= prev_vlen and (inst_idx + 1) < len(p_list):
+                inst_idx += 1
+            prev_vlen = k_vlen
 
-            k_sizes = [int(x) for x in ke["sizes"][:early_n]]
-            p_sizes = [int(x) for x in pf["sizes"][:early_n]]
+            if inst_idx >= len(p_list):
+                break
+            pf = p_list[inst_idx]
+            matched_pairs += 1
+            c_stat = per_ckpt_stats[k_vlen]
+            c_stat["matched"] += 1
+
+            k_sizes = [int(x) for x in ke["sizes"][:k_vlen]]
+            p_sizes = [int(x) for x in pf["sizes"][:k_vlen]]
             if k_sizes == p_sizes:
                 size_exact_matches += 1
+                c_stat["size_ok"] += 1
 
-            k_dirs = [int(x) for x in ke["dirs"][:early_n]]
-            p_dirs = [int(x) for x in pf["dirs"][:early_n]]
+            k_dirs = [int(x) for x in ke["dirs"][:k_vlen]]
+            p_dirs = [int(x) for x in pf["dirs"][:k_vlen]]
             if k_dirs == p_dirs:
                 dir_exact_matches += 1
+                c_stat["dir_ok"] += 1
 
-            k_iats = [int(x) for x in ke.get("iat_ns", [])[: early_n - 1]]
-            p_iats = [int(x) for x in pf.get("iat_ns", [])[: early_n - 1]]
+            k_iats = [int(x) for x in ke.get("iat_ns", [])[: max(0, k_vlen - 1)]]
+            p_iats = [int(x) for x in pf.get("iat_ns", [])[: max(0, k_vlen - 1)]]
             min_len = min(len(k_iats), len(p_iats))
             for i in range(min_len):
                 diff_us = abs(k_iats[i] - p_iats[i]) / 1000.0
                 iat_diffs_us.append(diff_us)
+                c_stat["iat_diffs_us"].append(diff_us)
 
-            k_vec = build_early_vector(k_sizes, k_dirs, [x / 1e6 for x in k_iats], early_n=early_n)
-            p_vec = build_early_vector(p_sizes, p_dirs, [x / 1e6 for x in p_iats], early_n=early_n)
+            k_vec = build_early_vector(k_sizes, k_dirs, [x / 1e6 for x in k_iats], early_n=k_vlen)
+            p_vec = build_early_vector(p_sizes, p_dirs, [x / 1e6 for x in p_iats], early_n=k_vlen)
             vec_max_diffs.append(float(np.max(np.abs(k_vec - p_vec))))
 
     size_match_rate = (size_exact_matches / matched_pairs) if matched_pairs > 0 else 0.0
@@ -194,17 +212,29 @@ def compare_flows(
     else:
         iat_p50 = iat_p95 = iat_p99 = iat_max = 0.0
 
+    per_checkpoint_summary = {}
+    for k_vlen, st in sorted(per_ckpt_stats.items()):
+        m = st["matched"]
+        c_iats = np.array(st["iat_diffs_us"], dtype=np.float64) if st["iat_diffs_us"] else np.zeros(1)
+        per_checkpoint_summary[str(k_vlen)] = {
+            "matched_events": m,
+            "size_exact_match_rate": (st["size_ok"] / m) if m > 0 else 0.0,
+            "dir_exact_match_rate": (st["dir_ok"] / m) if m > 0 else 0.0,
+            "iat_diff_p99_us": float(np.percentile(c_iats, 99)) if st["iat_diffs_us"] else 0.0,
+        }
+
     return {
         "pcap_flow_count": len(pcap_flows),
         "kernel_event_count": len(kernel_events),
         "matched_flows": matched_pairs,
         "size_exact_match_rate": size_match_rate,
-        "dir_exact_match_rate": dir_exact_rate if False else dir_match_rate,
+        "dir_exact_match_rate": dir_match_rate,
         "iat_diff_p50_us": iat_p50,
         "iat_diff_p95_us": iat_p95,
         "iat_diff_p99_us": iat_p99,
         "iat_diff_max_us": iat_max,
         "feature_vec_max_abs_diff": float(np.max(vec_max_diffs)) if vec_max_diffs else 0.0,
+        "per_checkpoint": per_checkpoint_summary,
         "passed": (
             matched_pairs > 0
             and size_match_rate == 1.0

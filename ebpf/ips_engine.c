@@ -19,11 +19,27 @@
 #include <uapi/linux/in.h>
 
 #ifndef SCHEMA_VERSION
-#define SCHEMA_VERSION 2
+#define SCHEMA_VERSION 3
+#endif
+
+#ifndef NUM_CHECKPOINTS
+#define NUM_CHECKPOINTS 3
+#endif
+
+#ifndef CKPT_0
+#define CKPT_0 4
+#endif
+
+#ifndef CKPT_1
+#define CKPT_1 8
+#endif
+
+#ifndef CKPT_2
+#define CKPT_2 16
 #endif
 
 #ifndef EARLY_N
-#define EARLY_N 12
+#define EARLY_N 16
 #endif
 
 #ifndef EARLY_N_MINUS_1
@@ -101,7 +117,7 @@ struct flow_record {
     __u8  proto;
     __u8  valid_len;
     __u8  flags_seen;
-    __u8  emitted;
+    __u8  emitted_mask; // bitmask of emitted checkpoints 0..K-1 (C1 / N7)
     __u32 ip_a;
     __u32 ip_b;
     __u16 port_a;
@@ -125,7 +141,7 @@ struct early_flow_event {
     __u8  proto;
     __u8  valid_len;
     __u8  flags_seen;
-    __u8  pad1;
+    __u8  checkpoint_idx; // 0..K-1 progressive checkpoint index (C1 / N7)
     __u32 ip_a;
     __u32 ip_b;
     __u16 port_a;
@@ -381,9 +397,27 @@ int xdp_ips_prog(struct xdp_md *ctx) {
         rec->last_ts_ns = now_ns;
     }
 
-    // 4. Emit ONE EARLY_FLOW event when valid_len reaches EARLY_N (F8)
-    if (rec->valid_len == EARLY_N && rec->emitted == 0) {
-        rec->emitted = 1;
+    // 4. Emit ONE EARLY_FLOW event at each progressive checkpoint CKPT_k (F8, C1/N7)
+    int ckpt_hit = -1;
+    if (rec->valid_len == CKPT_0 && !(rec->emitted_mask & (1U << 0))) {
+        ckpt_hit = 0;
+    }
+#if NUM_CHECKPOINTS >= 2
+    else if (rec->valid_len == CKPT_1 && !(rec->emitted_mask & (1U << 1))) {
+        ckpt_hit = 1;
+    }
+#endif
+#if NUM_CHECKPOINTS >= 3
+    else if (rec->valid_len == CKPT_2 && !(rec->emitted_mask & (1U << 2))) {
+        ckpt_hit = 2;
+    }
+#endif
+    else if (rec->valid_len == EARLY_N && !(rec->emitted_mask & (1U << (NUM_CHECKPOINTS - 1)))) {
+        ckpt_hit = NUM_CHECKPOINTS - 1;
+    }
+
+    if (ckpt_hit >= 0) {
+        rec->emitted_mask |= (__u8)(1U << ckpt_hit);
         if (cfg && cfg->shed) {
             // Load shedding active: skip ring buffer emission, fail open
             return XDP_PASS;
@@ -399,7 +433,7 @@ int xdp_ips_prog(struct xdp_md *ctx) {
         ev->proto = rec->proto;
         ev->valid_len = rec->valid_len;
         ev->flags_seen = rec->flags_seen;
-        ev->pad1 = 0;
+        ev->checkpoint_idx = (__u8)ckpt_hit;
         ev->ip_a = rec->ip_a;
         ev->ip_b = rec->ip_b;
         ev->port_a = rec->port_a;

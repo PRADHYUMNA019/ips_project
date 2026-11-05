@@ -30,13 +30,13 @@ from ips.eval.equivalence import (
 
 
 def test_c_header_and_ctypes_sync_across_early_n():
-    """Verify changing early_n updates C header macros and ctypes struct sizes consistently (F10)."""
+    """Verify changing early_n / checkpoints updates C header macros and ctypes struct sizes consistently (F10, C1)."""
     for n in (4, 8, 12, 16, 24):
         cfg = {"system": {"early_n": n, "flow_map_max": 2048, "verdict_map_max": 4096}}
         hdr = generate_c_header(cfg)
         assert f"#define EARLY_N {n}" in hdr
         assert f"#define EARLY_N_MINUS_1 {n - 1}" in hdr
-        assert "#define SCHEMA_VERSION 2" in hdr
+        assert "#define SCHEMA_VERSION 3" in hdr
 
         schemas = make_ctypes_schemas(n)
         assert ctypes.sizeof(schemas.FlowKey) == 16
@@ -45,6 +45,13 @@ def test_c_header_and_ctypes_sync_across_early_n():
         assert ctypes.sizeof(schemas.StatsEntry) == 56
         # EarlyFlowEvent must be 8-byte aligned for ringbuf_reserve
         assert ctypes.sizeof(schemas.EarlyFlowEvent) % 8 == 0
+
+    default_hdr = generate_c_header()
+    assert "#define NUM_CHECKPOINTS 3" in default_hdr
+    assert "#define CKPT_0 4" in default_hdr
+    assert "#define CKPT_1 8" in default_hdr
+    assert "#define CKPT_2 16" in default_hdr
+    assert "#define EARLY_N 16" in default_hdr
 
 
 def test_flow_key_canonical_symmetry():
@@ -83,7 +90,8 @@ def test_early_flow_event_roundtrip():
         ev.iat_ns[i] = dt
 
     d = event_to_dict(ev)
-    assert d["schema_version"] == 2
+    assert d["schema_version"] == 3
+    assert d["checkpoint_idx"] == 0
     assert d["proto"] == "TCP"
     assert d["ip_a"] == "10.0.1.11"
     assert d["ip_b"] == "10.0.2.10"
@@ -175,5 +183,59 @@ def test_ebpf_c_sources_present_and_valid():
 
     with open(v2_path, "r", encoding="utf-8") as f:
         src = f.read()
-    for token in ("verdict_map", "flow_state", "tier0_map", "cfg_map", "stats_map", "BPF_RINGBUF_OUTPUT", "xdp_ips_prog"):
+    for token in ("verdict_map", "flow_state", "tier0_map", "cfg_map", "stats_map", "BPF_RINGBUF_OUTPUT", "xdp_ips_prog", "emitted_mask", "checkpoint_idx"):
         assert token in src
+
+
+def test_multi_checkpoint_equivalence():
+    """C1 / N6: Verify per-checkpoint equivalence across checkpoints [4, 8, 16] and short flows ending at 6."""
+    sizes_16 = [100 + i * 10 for i in range(16)]
+    dirs_16 = [i % 2 for i in range(16)]
+    iats_15 = [10_000_000] * 15
+
+    # Flow 1: reaches all 3 checkpoints (4, 8, 16)
+    pf_full = {
+        "ip_a": "10.0.1.11", "port_a": 50001, "ip_b": "10.0.2.10", "port_b": 8443, "proto": "TCP",
+        "sizes": sizes_16, "dirs": dirs_16, "iat_ns": iats_15, "valid_len": 16,
+    }
+    # Flow 2: short flow of 6 packets, only reaches checkpoint 4
+    pf_short = {
+        "ip_a": "10.0.1.21", "port_a": 50002, "ip_b": "10.0.2.10", "port_b": 8883, "proto": "TCP",
+        "sizes": sizes_16[:6], "dirs": dirs_16[:6], "iat_ns": iats_15[:5], "valid_len": 6,
+    }
+
+    kernel_events = [
+        # Flow 1 checkpoints: 4, 8, 16
+        {
+            "ip_a": "10.0.1.11", "port_a": 50001, "ip_b": "10.0.2.10", "port_b": 8443, "proto": "TCP",
+            "valid_len": 4, "checkpoint_idx": 0,
+            "sizes": sizes_16[:4], "dirs": dirs_16[:4], "iat_ns": iats_15[:3],
+        },
+        {
+            "ip_a": "10.0.1.11", "port_a": 50001, "ip_b": "10.0.2.10", "port_b": 8443, "proto": "TCP",
+            "valid_len": 8, "checkpoint_idx": 1,
+            "sizes": sizes_16[:8], "dirs": dirs_16[:8], "iat_ns": iats_15[:7],
+        },
+        {
+            "ip_a": "10.0.1.11", "port_a": 50001, "ip_b": "10.0.2.10", "port_b": 8443, "proto": "TCP",
+            "valid_len": 16, "checkpoint_idx": 2,
+            "sizes": sizes_16[:16], "dirs": dirs_16[:16], "iat_ns": iats_15[:15],
+        },
+        # Flow 2 checkpoint: 4 only (short flow ends at 6)
+        {
+            "ip_a": "10.0.1.21", "port_a": 50002, "ip_b": "10.0.2.10", "port_b": 8883, "proto": "TCP",
+            "valid_len": 4, "checkpoint_idx": 0,
+            "sizes": sizes_16[:4], "dirs": dirs_16[:4], "iat_ns": iats_15[:3],
+        },
+    ]
+
+    metrics = compare_flows([pf_full, pf_short], kernel_events, early_n=16)
+    assert metrics["passed"] is True
+    assert metrics["matched_flows"] == 4
+    assert metrics["per_checkpoint"]["4"]["matched_events"] == 2
+    assert metrics["per_checkpoint"]["8"]["matched_events"] == 1
+    assert metrics["per_checkpoint"]["16"]["matched_events"] == 1
+    assert metrics["per_checkpoint"]["4"]["size_exact_match_rate"] == 1.0
+    assert metrics["per_checkpoint"]["8"]["size_exact_match_rate"] == 1.0
+    assert metrics["per_checkpoint"]["16"]["size_exact_match_rate"] == 1.0
+
