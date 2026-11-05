@@ -83,7 +83,11 @@ class MockBPFBackend:
             "events_emitted": 0,
             "ringbuf_drop_failures": 0,
             "flow_insert_failures": 0,
+            "ckpt_retry": 0,
+            "ckpt_skipped_shed": 0,
         }
+        self.simulate_ringbuf_full = False
+        self.flow_idle_ns = 120 * 1_000_000_000
 
     def set_verdict(self, fk, action: int, expiry_ns: int):
         self.verdict_map[bytes(fk)] = (int(action), int(expiry_ns))
@@ -114,6 +118,8 @@ class MockBPFBackend:
         payload_len: int,
         direction: int,
         now_ns: int,
+        tcp_flags: int = 0,
+        is_syn_only: bool = False,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
         Simulate XDP packet processing through verdict_map and flow_state.
@@ -131,7 +137,15 @@ class MockBPFBackend:
 
         k = bytes(fk)
         tup = flow_key_to_canonical_tuple(fk)
-        if k not in self.flow_state:
+        reinit = False
+        if k in self.flow_state:
+            rec_prev = self.flow_state[k]
+            if is_syn_only and (((rec_prev.get("flags_seen", 0) & 0x05) != 0) or len(rec_prev["sizes"]) > 0):
+                reinit = True
+            elif (now_ns - rec_prev.get("last_seen_ns", rec_prev["last_ts_ns"])) > self.flow_idle_ns:
+                reinit = True
+
+        if k not in self.flow_state or reinit:
             self.flow_state[k] = {
                 "schema_version": SCHEMA_VERSION,
                 "ip_a": tup[0],
@@ -143,8 +157,10 @@ class MockBPFBackend:
                 "initiator_port": sport,
                 "first_ts_ns": now_ns,
                 "last_ts_ns": now_ns,
+                "last_seen_ns": now_ns,
                 "total_pkts": 0,
                 "total_bytes": 0,
+                "flags_seen": int(tcp_flags),
                 "sizes": [],
                 "dirs": [],
                 "iat_ns": [],
@@ -154,6 +170,8 @@ class MockBPFBackend:
         rec = self.flow_state[k]
         rec["total_pkts"] += 1
         rec["total_bytes"] += payload_len + 40
+        rec["flags_seen"] = rec.get("flags_seen", 0) | int(tcp_flags)
+        rec["last_seen_ns"] = now_ns
         if payload_len > 0 and len(rec["sizes"]) < self.early_n:
             if len(rec["sizes"]) > 0:
                 rec["iat_ns"].append(max(0, now_ns - rec["last_ts_ns"]))
@@ -162,20 +180,30 @@ class MockBPFBackend:
             rec["last_ts_ns"] = now_ns
 
         cur_vlen = len(rec["sizes"])
-        if cur_vlen in self.checkpoints:
-            ckpt_idx = self.checkpoints.index(cur_vlen)
-            if not (rec["emitted_mask"] & (1 << ckpt_idx)):
-                rec["emitted_mask"] |= (1 << ckpt_idx)
-                if self.cfg["shed"] == 1:
-                    return ("XDP_PASS", None)
-                self.stats["events_emitted"] += 1
-                ev = dict(rec)
-                ev["sizes"] = list(rec["sizes"])
-                ev["dirs"] = list(rec["dirs"])
-                ev["iat_ns"] = list(rec["iat_ns"])
-                ev["valid_len"] = cur_vlen
-                ev["checkpoint_idx"] = ckpt_idx
-                return ("XDP_PASS", ev)
+        ckpt_hit = -1
+        for idx, ckpt_val in enumerate(self.checkpoints):
+            if cur_vlen >= ckpt_val and not (rec["emitted_mask"] & (1 << idx)):
+                ckpt_hit = idx
+                break
+
+        if ckpt_hit >= 0:
+            if self.cfg["shed"] == 1:
+                self.stats["ckpt_skipped_shed"] = self.stats.get("ckpt_skipped_shed", 0) + 1
+                return ("XDP_PASS", None)
+            if getattr(self, "simulate_ringbuf_full", False):
+                self.stats["ringbuf_drop_failures"] += 1
+                self.stats["ckpt_retry"] = self.stats.get("ckpt_retry", 0) + 1
+                return ("XDP_PASS", None)
+
+            rec["emitted_mask"] |= (1 << ckpt_hit)
+            self.stats["events_emitted"] += 1
+            ev = dict(rec)
+            ev["sizes"] = list(rec["sizes"])
+            ev["dirs"] = list(rec["dirs"])
+            ev["iat_ns"] = list(rec["iat_ns"])
+            ev["valid_len"] = cur_vlen
+            ev["checkpoint_idx"] = ckpt_hit
+            return ("XDP_PASS", ev)
 
         return ("XDP_PASS", None)
 
@@ -249,6 +277,8 @@ class BCCKernelBackend:
             "events_emitted": 0,
             "ringbuf_drop_failures": 0,
             "flow_insert_failures": 0,
+            "ckpt_retry": 0,
+            "ckpt_skipped_shed": 0,
         }
         try:
             per_cpu = self.stats_map[ctypes.c_int(0)]

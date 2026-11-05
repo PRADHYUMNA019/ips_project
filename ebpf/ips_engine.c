@@ -19,7 +19,11 @@
 #include <uapi/linux/in.h>
 
 #ifndef SCHEMA_VERSION
-#define SCHEMA_VERSION 3
+#define SCHEMA_VERSION 4
+#endif
+
+#ifndef FLOW_IDLE_NS
+#define FLOW_IDLE_NS (120ULL * 1000000000ULL)
 #endif
 
 #ifndef NUM_CHECKPOINTS
@@ -103,6 +107,8 @@ struct stats_entry {
     __u64 events_emitted;
     __u64 ringbuf_drop_failures;
     __u64 flow_insert_failures;
+    __u64 ckpt_retry;
+    __u64 ckpt_skipped_shed;
 } __attribute__((packed));
 
 struct tier0_bucket {
@@ -130,6 +136,7 @@ struct flow_record {
     __u32 pad3;
     __u64 first_ts_ns;
     __u64 last_ts_ns;
+    __u64 last_seen_ns;
     __u64 iat_ns[EARLY_N_MINUS_1];
     __u16 sizes[EARLY_N];
     __u8  dirs[EARLY_N];
@@ -346,9 +353,18 @@ int xdp_ips_prog(struct xdp_md *ctx) {
         payload_len = ip_tot_len - (__u16)hdr_sum;
     }
 
-    // 3. Lookup or initialize flow_state (F7, F9)
+    // 3. Lookup or initialize flow_state (F7, F9, A1)
     struct flow_record *rec = flow_state.lookup(&key);
-    if (!rec) {
+    int reinit = 0;
+    if (rec) {
+        if (is_syn_only && ((rec->flags_seen & 0x05) != 0 || rec->valid_len > 0)) {
+            reinit = 1;
+        } else if ((now_ns - rec->last_seen_ns) > FLOW_IDLE_NS) {
+            reinit = 1;
+        }
+    }
+
+    if (!rec || reinit) {
         struct flow_record *scratch = scratch_map.lookup(&zero);
         if (!scratch) {
             return XDP_PASS;
@@ -364,6 +380,7 @@ int xdp_ips_prog(struct xdp_md *ctx) {
         scratch->initiator_port = sport;
         scratch->first_ts_ns = now_ns;
         scratch->last_ts_ns = now_ns;
+        scratch->last_seen_ns = now_ns;
         scratch->total_pkts = 1;
         scratch->total_bytes = ip_tot_len;
         scratch->flags_seen = tcp_flags;
@@ -382,6 +399,7 @@ int xdp_ips_prog(struct xdp_md *ctx) {
     rec->total_pkts += 1;
     rec->total_bytes += ip_tot_len;
     rec->flags_seen |= tcp_flags;
+    rec->last_seen_ns = now_ns;
 
     if (payload_len > 0 && rec->valid_len < EARLY_N) {
         __u8 idx = rec->valid_len;
@@ -397,35 +415,38 @@ int xdp_ips_prog(struct xdp_md *ctx) {
         rec->last_ts_ns = now_ns;
     }
 
-    // 4. Emit ONE EARLY_FLOW event at each progressive checkpoint CKPT_k (F8, C1/N7)
+    // 4. Emit ONE EARLY_FLOW event at each progressive checkpoint CKPT_k (F8, C1/N7, A2)
     int ckpt_hit = -1;
-    if (rec->valid_len == CKPT_0 && !(rec->emitted_mask & (1U << 0))) {
+    if (rec->valid_len >= CKPT_0 && !(rec->emitted_mask & (1U << 0))) {
         ckpt_hit = 0;
     }
 #if NUM_CHECKPOINTS >= 2
-    else if (rec->valid_len == CKPT_1 && !(rec->emitted_mask & (1U << 1))) {
+    else if (rec->valid_len >= CKPT_1 && !(rec->emitted_mask & (1U << 1))) {
         ckpt_hit = 1;
     }
 #endif
 #if NUM_CHECKPOINTS >= 3
-    else if (rec->valid_len == CKPT_2 && !(rec->emitted_mask & (1U << 2))) {
+    else if (rec->valid_len >= CKPT_2 && !(rec->emitted_mask & (1U << 2))) {
         ckpt_hit = 2;
     }
 #endif
-    else if (rec->valid_len == EARLY_N && !(rec->emitted_mask & (1U << (NUM_CHECKPOINTS - 1)))) {
+    else if (rec->valid_len >= EARLY_N && !(rec->emitted_mask & (1U << (NUM_CHECKPOINTS - 1)))) {
         ckpt_hit = NUM_CHECKPOINTS - 1;
     }
 
     if (ckpt_hit >= 0) {
-        rec->emitted_mask |= (__u8)(1U << ckpt_hit);
         if (cfg && cfg->shed) {
-            // Load shedding active: skip ring buffer emission, fail open
+            // Load shedding active: do not emit, leave bit unset for later retry, fail open
+            if (st) st->ckpt_skipped_shed++;
             return XDP_PASS;
         }
 
         struct early_flow_event *ev = events.ringbuf_reserve(sizeof(struct early_flow_event));
         if (!ev) {
-            if (st) st->ringbuf_drop_failures++;
+            if (st) {
+                st->ringbuf_drop_failures++;
+                st->ckpt_retry++;
+            }
             return XDP_PASS;
         }
 

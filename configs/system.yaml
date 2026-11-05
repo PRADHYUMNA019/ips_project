@@ -27,6 +27,7 @@ system:
   # Verdict TTLs (seconds)
   bypass_ttl_s: 300          # how long a BYPASS verdict persists
   drop_ttl_s: 60             # how long a DROP verdict persists
+  flow_idle_s: 120           # idle timeout after which flow state resets (A1)
 
   # EVT calibration target
   target_fpr: 0.001

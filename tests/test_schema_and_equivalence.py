@@ -36,13 +36,14 @@ def test_c_header_and_ctypes_sync_across_early_n():
         hdr = generate_c_header(cfg)
         assert f"#define EARLY_N {n}" in hdr
         assert f"#define EARLY_N_MINUS_1 {n - 1}" in hdr
-        assert "#define SCHEMA_VERSION 3" in hdr
+        assert "#define SCHEMA_VERSION 4" in hdr
+        assert "#define FLOW_IDLE_NS" in hdr
 
         schemas = make_ctypes_schemas(n)
         assert ctypes.sizeof(schemas.FlowKey) == 16
         assert ctypes.sizeof(schemas.VerdictEntry) == 16
         assert ctypes.sizeof(schemas.CfgEntry) == 16
-        assert ctypes.sizeof(schemas.StatsEntry) == 56
+        assert ctypes.sizeof(schemas.StatsEntry) == 72
         # EarlyFlowEvent must be 8-byte aligned for ringbuf_reserve
         assert ctypes.sizeof(schemas.EarlyFlowEvent) % 8 == 0
 
@@ -52,6 +53,97 @@ def test_c_header_and_ctypes_sync_across_early_n():
     assert "#define CKPT_1 8" in default_hdr
     assert "#define CKPT_2 16" in default_hdr
     assert "#define EARLY_N 16" in default_hdr
+
+
+def test_flow_record_lifecycle_and_reinit_a1():
+    """A1 (DEF-03): Verify Python model of fast path re-initializes on 5-tuple reuse and idle timeout."""
+    from ips.engine.engine import MockBPFBackend
+
+    backend = MockBPFBackend(early_n=16, checkpoints=[4, 8, 16])
+    t0 = 1_000_000_000
+
+    # 1. First connection: send 4 payload packets -> triggers checkpoint 0 (N=4)
+    emitted_1 = []
+    for i in range(4):
+        act, ev = backend.simulate_packet("10.0.1.11", 50001, "10.0.2.10", 8883, "TCP", 100, 0, t0 + i * 100_000_000)
+        if ev:
+            emitted_1.append(ev)
+    assert len(emitted_1) == 1
+    assert emitted_1[0]["checkpoint_idx"] == 0
+
+    # Close connection with FIN flag (0x01)
+    backend.simulate_packet("10.0.1.11", 50001, "10.0.2.10", 8883, "TCP", 0, 0, t0 + 500_000_000, tcp_flags=0x01)
+
+    # 2. Second connection on the SAME 5-tuple starts with SYN: must reset state and emit checkpoint 0 again!
+    t1 = t0 + 2_000_000_000
+    emitted_2 = []
+    # Send SYN
+    backend.simulate_packet("10.0.1.11", 50001, "10.0.2.10", 8883, "TCP", 0, 0, t1, tcp_flags=0x02, is_syn_only=True)
+    # Send 4 payload packets
+    for i in range(4):
+        act, ev = backend.simulate_packet("10.0.1.11", 50001, "10.0.2.10", 8883, "TCP", 120, 0, t1 + 10_000_000 + i * 100_000_000)
+        if ev:
+            emitted_2.append(ev)
+    assert len(emitted_2) == 1, "Second connection on reused 5-tuple must emit checkpoint event!"
+    assert emitted_2[0]["checkpoint_idx"] == 0
+
+    # 3. SYN retransmit on fresh flow without FIN/RST (valid_len == 0): must NOT reset
+    t2 = t1 + 10_000_000_000
+    backend.simulate_packet("10.0.1.12", 50002, "10.0.2.10", 8883, "TCP", 0, 0, t2, tcp_flags=0x02, is_syn_only=True)
+    fk_retrans = bytes(make_flow_key("10.0.1.12", 50002, "10.0.2.10", 8883, "TCP"))
+    orig_ts = backend.flow_state[fk_retrans]["first_ts_ns"]
+    # Retransmit SYN 1 second later
+    backend.simulate_packet("10.0.1.12", 50002, "10.0.2.10", 8883, "TCP", 0, 0, t2 + 1_000_000_000, tcp_flags=0x02, is_syn_only=True)
+    assert backend.flow_state[fk_retrans]["first_ts_ns"] == orig_ts, "SYN retransmit on fresh flow must not reset first_ts_ns"
+
+    # 4. Idle timeout: connection idles for > flow_idle_ns (default 120s) -> next packet restarts flow
+    t3 = t2 + 200_000_000_000  # 200s later (> 120s)
+    # Send 4 packets
+    emitted_idle = []
+    for i in range(4):
+        act, ev = backend.simulate_packet("10.0.1.12", 50002, "10.0.2.10", 8883, "TCP", 90, 0, t3 + i * 100_000_000)
+        if ev:
+            emitted_idle.append(ev)
+    assert len(emitted_idle) == 1, "Idled-out flow must restart and emit checkpoint event"
+
+
+def test_checkpoint_retry_and_shed_counters_a2():
+    """A2: Verify checkpoint retry on ringbuffer exhaustion and skipped emission during load shedding."""
+    from ips.engine.engine import MockBPFBackend
+
+    backend = MockBPFBackend(early_n=16, checkpoints=[4, 8, 16])
+    t0 = 1_000_000_000
+
+    # 1. Simulate load-shedding active: packet reaching N=4 skips emission, counts ckpt_skipped_shed, emitted_mask stays 0
+    backend.set_shed(1)
+    for i in range(4):
+        act, ev = backend.simulate_packet("10.0.1.13", 50003, "10.0.2.10", 8883, "TCP", 100, 0, t0 + i * 100_000_000)
+        assert ev is None
+    assert backend.stats["ckpt_skipped_shed"] == 1
+    fk = bytes(make_flow_key("10.0.1.13", 50003, "10.0.2.10", 8883, "TCP"))
+    assert backend.flow_state[fk]["emitted_mask"] == 0, "emitted_mask must remain unset while shedding"
+
+    # Turn off shedding: next packet (packet 5) must retry checkpoint 0 and successfully emit!
+    backend.set_shed(0)
+    act, ev = backend.simulate_packet("10.0.1.13", 50003, "10.0.2.10", 8883, "TCP", 100, 0, t0 + 500_000_000)
+    assert ev is not None, "Checkpoint must retry after shedding is disabled"
+    assert ev["checkpoint_idx"] == 0
+    assert backend.flow_state[fk]["emitted_mask"] == 1
+
+    # 2. Simulate ringbuffer full failure: packet reaching N=8 fails reserve, counts ckpt_retry, emitted_mask stays 1
+    backend.simulate_ringbuf_full = True
+    for i in range(3):  # packets 6, 7, 8
+        act, ev = backend.simulate_packet("10.0.1.13", 50003, "10.0.2.10", 8883, "TCP", 100, 0, t0 + 600_000_000 + i * 100_000_000)
+        assert ev is None
+    assert backend.stats["ckpt_retry"] == 1
+    assert backend.flow_state[fk]["emitted_mask"] == 1, "Checkpoint 1 bit must remain unset on ringbuf drop"
+
+    # Recover ringbuffer: next packet (packet 9) retries checkpoint 1 and successfully emits!
+    backend.simulate_ringbuf_full = False
+    act, ev = backend.simulate_packet("10.0.1.13", 50003, "10.0.2.10", 8883, "TCP", 100, 0, t0 + 1_000_000_000)
+    assert ev is not None
+    assert ev["checkpoint_idx"] == 1
+    assert backend.flow_state[fk]["emitted_mask"] == 3
 
 
 def test_flow_key_canonical_symmetry():
@@ -90,7 +182,7 @@ def test_early_flow_event_roundtrip():
         ev.iat_ns[i] = dt
 
     d = event_to_dict(ev)
-    assert d["schema_version"] == 3
+    assert d["schema_version"] == 4
     assert d["checkpoint_idx"] == 0
     assert d["proto"] == "TCP"
     assert d["ip_a"] == "10.0.1.11"

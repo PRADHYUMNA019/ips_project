@@ -80,6 +80,8 @@ struct stats_entry {
     __u64 events_emitted;
     __u64 ringbuf_drop_failures;
     __u64 flow_insert_failures;
+    __u64 ckpt_retry;
+    __u64 ckpt_skipped_shed;
 } __attribute__((packed));
 
 struct early_flow_event {
@@ -138,3 +140,4 @@ EOF
 else
     echo "No C compiler available to execute probe binary directly; static verification performed."
 fi
+

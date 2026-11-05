@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """audit/check_canonical_key.py - Audit canonical flow key consistency across C, Python engine, and offline extractor.
 
+NOTE: This is a Python model of the C logic; not an execution of the C code.
+
 Prompt 4 requirement:
 Compare how the flow key is canonicalised in C, in Python engine (ips/engine/schema.py),
 and in the offline extractor (ips/offline/pcap_to_flows.py).
@@ -141,3 +143,4 @@ def run_checks():
 
 if __name__ == "__main__":
     run_checks()
+

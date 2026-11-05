@@ -17,7 +17,7 @@ TARGET_STAGE="${1:-ALL}"
 declare -A STAGE_STATUS
 declare -A STAGE_TIME
 declare -A STAGE_NOTES
-STAGES=(S0 S1 S2 S3 S4 S5 S5b S6 S6b S7 S8 S8b S9 S10 S11)
+STAGES=(S0 S1 S2 S3 S4 S5 S5b S6 S6b S6c S6d S6e S7 S8 S8b S9 S10 S11)
 
 run_stage() {
     local sid="$1"
@@ -148,6 +148,38 @@ stage_S6b() {
     python3 -m pytest tests/test_schema_and_equivalence.py -k "test_multi_checkpoint_equivalence" -v
 }
 
+stage_S6c() {
+    cd "$REPO_DIR"
+    python3 -m pytest tests/test_schema_and_equivalence.py -k "test_flow_record_lifecycle_and_reinit_a1 or test_checkpoint_retry_and_shed_counters_a2" -v
+}
+
+stage_S6d() {
+    cd "$REPO_DIR"
+    python3 -c "
+import threading, time
+from ips.engine.engine import MockBPFBackend
+b = MockBPFBackend(16, [4, 8, 16])
+errs = []
+def w(t):
+    try:
+        for i in range(50):
+            b.simulate_packet('10.0.1.11', 50000+t, '10.0.2.10', 8443, 'TCP', 100, 0, int(time.time()*1e9)+i*1000)
+    except Exception as e:
+        errs.append(e)
+th = [threading.Thread(target=w, args=(i,)) for i in range(4)]
+for t in th: t.start()
+for t in th: t.join()
+assert not errs, f'Threading errors: {errs}'
+print('Multi-threaded RPS concurrency simulation completed cleanly.')
+"
+}
+
+stage_S6e() {
+    cd "$REPO_DIR"
+    python3 audit/check_canonical_key.py
+    python3 -m pytest tests/test_schema_and_equivalence.py -k "test_flow_key_canonical_symmetry" -v
+}
+
 stage_S7() {
     cd "$REPO_DIR"
     python3 -m pytest tests/test_manifest.py -v
@@ -187,6 +219,9 @@ run_stage "S5"  "Per-5-Tuple Verdict & TTL Expiry"           stage_S5
 run_stage "S5b" "Progressive Checkpoints [4,8,16] (C1)"      stage_S5b
 run_stage "S6"  "Kernel-vs-Offline Equivalence (N6)"         stage_S6
 run_stage "S6b" "Multi-Checkpoint Equivalence [4,8,16]"      stage_S6b
+run_stage "S6c" "Flow Lifecycle & Re-init (A1/A2)"            stage_S6c
+run_stage "S6d" "Concurrency RPS CPU Pinning (A3)"           stage_S6d
+run_stage "S6e" "Canonical Key Drop Execution (A4)"          stage_S6e
 run_stage "S7"  "Experiment Manifest & Capture"              stage_S7
 run_stage "S8"  "Closed-Loop Engine & Watchdog"              stage_S8
 run_stage "S8b" "Netem Impairment & Feature Ablations (C11)" stage_S8b
