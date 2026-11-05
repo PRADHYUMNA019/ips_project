@@ -27,9 +27,14 @@ from sklearn.ensemble import IsolationForest
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
 
-from ips.features import get_feature_names, build_early_vector, assert_no_forbidden_features
+from ips.features import (
+    get_feature_names,
+    build_early_vector,
+    assert_no_forbidden_features,
+    recompute_early_matrix_for_k,
+)
 from ips.models.autoencoder import EarlyFlowAutoencoder, KitsuneStyleEnsemble
-from ips.models.evt import fit_evt_threshold
+from ips.models.evt import fit_evt_threshold, allocate_checkpoint_alpha_budget
 from ips.models.quantize import export_to_onnx, quantize_to_int8, compare_fp32_int8
 from ips.smoke.synth import SMOKE_BANNER
 
@@ -58,18 +63,13 @@ def extract_matrix_from_df(df: pd.DataFrame, early_n: int = 12) -> Tuple[np.ndar
     feature_names = get_feature_names(early_n)
     assert_no_forbidden_features(feature_names)
 
-    # Check if df already has the exact pre-computed normalized feature columns from pcap_to_flows
+    # Check if df already has the exact pre-computed normalized feature columns for this exact early_n
     has_all_features = all(c in df.columns for c in feature_names)
-    if has_all_features and "log_iat_0" in df.columns:
+    has_extra_size_cols = f"size_{early_n}" in df.columns
+    if has_all_features and not has_extra_size_cols and "log_iat_0" in df.columns:
         X = df[feature_names].values.astype(np.float32)
     else:
-        rows = []
-        for _, row in df.iterrows():
-            sizes = [int(row[f"size_{i}"]) for i in range(early_n) if f"size_{i}" in row and pd.notna(row[f"size_{i}"])]
-            dirs = [int(row[f"dir_{i}"]) for i in range(early_n) if f"dir_{i}" in row and pd.notna(row[f"dir_{i}"])]
-            iats = [float(row[f"iat_{i}"]) for i in range(early_n - 1) if f"iat_{i}" in row and pd.notna(row[f"iat_{i}"])]
-            rows.append(build_early_vector(sizes, dirs, iats, early_n=early_n))
-        X = np.array(rows, dtype=np.float32) if rows else np.zeros((0, len(feature_names)), dtype=np.float32)
+        X = recompute_early_matrix_for_k(df, early_n)
 
     y = df["is_attack"].values.astype(int) if "is_attack" in df.columns else np.zeros(len(df), dtype=int)
     return X, y, feature_names
@@ -127,12 +127,15 @@ def train_autoencoder(X_train: np.ndarray, X_val: np.ndarray, input_dim: int,
     return model, best_loss
 
 
-def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 12,
+def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 16,
+                   checkpoints: List[int] = None,
                    epochs: int = 20, seed: int = 42, model_dir: str = None) -> Dict[str, Any]:
-    """Run full benign-only training, EVT calibration, and quantization pipeline."""
+    """Run full benign-only training, progressive checkpoint training (C1/N7), EVT calibration, and quantization."""
     if model_dir is None:
         model_dir = os.path.join(REPO_DIR, "models")
     os.makedirs(model_dir, exist_ok=True)
+    if checkpoints is None:
+        checkpoints = [4, 8, 16] if early_n >= 16 else sorted(list({4, 8, early_n}))
 
     df = pd.read_csv(data_path) if data_path.endswith(".csv") else pd.read_parquet(data_path)
     is_smoke = is_smoke_dataframe(df, data_path)
@@ -154,6 +157,9 @@ def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 12,
         n_tr = int(len(X_all) * 0.85)
         X_train, X_val = X_all[:n_tr], X_all[n_tr:]
         X_calib = X_calib_full
+        train_benign_df = benign_df.iloc[:n_tr]
+        val_benign_df = benign_df.iloc[n_tr:]
+        cal_benign_df = calib_benign
     else:
         # Partition into separate train (60%), val (15%), calibration (25%)
         n_total = len(X_all)
@@ -162,14 +168,71 @@ def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 12,
         X_train = X_all[:n_tr]
         X_val = X_all[n_tr:n_val]
         X_calib = X_all[n_val:]
+        train_benign_df = benign_df.iloc[:n_tr]
+        val_benign_df = benign_df.iloc[n_tr:n_val]
+        cal_benign_df = benign_df.iloc[n_val:]
 
     print(f"[Train] Splits (benign only): train={len(X_train)}, val={len(X_val)}, calib={len(X_calib)}, dim={input_dim}")
 
-    # 1. Global PyTorch Autoencoder
+    # 1. Global PyTorch Autoencoder (at full window early_n)
     ae_model, best_val_loss = train_autoencoder(X_train, X_val, input_dim=input_dim, epochs=epochs, seed=seed)
     calib_scores, _ = ae_model.get_reconstruction_error(X_calib)
     evt_001 = fit_evt_threshold(calib_scores, target_fpr=0.001)
     evt_01 = fit_evt_threshold(calib_scores, target_fpr=0.01)
+
+    # 1b. Progressive Checkpoint Autoencoders (C1 / N7: checkpoints [4, 8, 16])
+    # Calibrate each checkpoint k on benign calibration flows that actually reach packet k (raw_valid_len >= k)
+    alpha_equal_001 = allocate_checkpoint_alpha_budget(0.001, checkpoints, scheme="equal")
+    alpha_front_001 = allocate_checkpoint_alpha_budget(0.001, checkpoints, scheme="front_loaded")
+    alpha_equal_01 = allocate_checkpoint_alpha_budget(0.01, checkpoints, scheme="equal")
+    alpha_front_01 = allocate_checkpoint_alpha_budget(0.01, checkpoints, scheme="front_loaded")
+
+    checkpoint_models: Dict[str, Any] = {}
+    for ckpt_k in checkpoints:
+        # Filter flows reaching packet ckpt_k if raw_valid_len is available
+        if "raw_valid_len" in train_benign_df.columns:
+            tr_k_df = train_benign_df[train_benign_df["raw_valid_len"] >= ckpt_k]
+            val_k_df = val_benign_df[val_benign_df["raw_valid_len"] >= ckpt_k]
+            cal_k_df = cal_benign_df[cal_benign_df["raw_valid_len"] >= ckpt_k]
+            if len(tr_k_df) < 10:
+                tr_k_df, val_k_df, cal_k_df = train_benign_df, val_benign_df, cal_benign_df
+        else:
+            tr_k_df, val_k_df, cal_k_df = train_benign_df, val_benign_df, cal_benign_df
+
+        X_tr_k = recompute_early_matrix_for_k(tr_k_df, ckpt_k)
+        X_val_k = recompute_early_matrix_for_k(val_k_df, ckpt_k)
+        X_cal_k = recompute_early_matrix_for_k(cal_k_df, ckpt_k)
+        dim_k = 3 * ckpt_k + 8
+
+        ae_k, loss_k = train_autoencoder(X_tr_k, X_val_k, input_dim=dim_k, epochs=epochs, seed=seed + ckpt_k)
+        cal_scores_k, _ = ae_k.get_reconstruction_error(X_cal_k)
+
+        evt_k_eq_001 = fit_evt_threshold(cal_scores_k, target_fpr=alpha_equal_001[ckpt_k])
+        evt_k_fl_001 = fit_evt_threshold(cal_scores_k, target_fpr=alpha_front_001[ckpt_k])
+        evt_k_eq_01 = fit_evt_threshold(cal_scores_k, target_fpr=alpha_equal_01[ckpt_k])
+        evt_k_fl_01 = fit_evt_threshold(cal_scores_k, target_fpr=alpha_front_01[ckpt_k])
+
+        ckpt_fp32 = os.path.join(model_dir, f"ae_ckpt_{ckpt_k}.onnx")
+        ckpt_int8 = os.path.join(model_dir, f"ae_ckpt_{ckpt_k}_int8.onnx")
+        export_to_onnx(ae_k, dim_k, ckpt_fp32)
+        quantize_to_int8(ckpt_fp32, ckpt_int8)
+
+        checkpoint_models[str(ckpt_k)] = {
+            "checkpoint_n": ckpt_k,
+            "input_dim": dim_k,
+            "onnx_fp32_path": ckpt_fp32,
+            "onnx_int8_path": ckpt_int8,
+            "n_calib_reaching_k": len(X_cal_k),
+            "best_val_mse": round(float(loss_k), 6),
+            "alpha_equal_001": alpha_equal_001[ckpt_k],
+            "alpha_front_001": alpha_front_001[ckpt_k],
+            "tau_equal_001": evt_k_eq_001["threshold"],
+            "tau_front_001": evt_k_fl_001["threshold"],
+            "tau_equal_01": evt_k_eq_01["threshold"],
+            "tau_front_01": evt_k_fl_01["threshold"],
+            "tau_conformal_equal_01": evt_k_eq_01["conformal_q"],
+            "three_sigma": evt_k_eq_001["three_sigma"],
+        }
 
     # 2. Per-device-class Autoencoders (N5 ablation)
     per_class_thresholds = {}
@@ -230,6 +293,8 @@ def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 12,
         "data_source": "synthetic-smoke" if is_smoke else "real",
         "data_sha256": data_hash,
         "early_n": early_n,
+        "checkpoints": checkpoints,
+        "checkpoint_models": checkpoint_models,
         "input_dim": input_dim,
         "seed": seed,
         "train_samples": len(X_train),
@@ -264,7 +329,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train benign anomaly detection models and fit EVT")
     parser.add_argument("--data", default="results/smoke/smoke_train_sess.csv", help="Training data CSV/parquet")
     parser.add_argument("--calib", default=None, help="Optional separate calibration session CSV/parquet")
-    parser.add_argument("--early-n", type=int, default=12, help="Payload packets per flow")
+    parser.add_argument("--early-n", type=int, default=16, help="Payload packets per flow (max checkpoint)")
     parser.add_argument("--epochs", type=int, default=20, help="Training epochs")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()

@@ -164,4 +164,59 @@ def test_train_and_eval_pipeline_smoke():
         assert os.path.exists(os.path.join(out_dir, "eval_models.csv"))
         assert os.path.exists(os.path.join(out_dir, "calibration_curve.csv"))
         assert os.path.exists(os.path.join(out_dir, "quantization_table.csv"))
+        assert os.path.exists(os.path.join(out_dir, "progressive_pareto.csv"))
+
+
+def test_split_conformal_regime_and_alpha_budget():
+    """C9 & C1: Verify split-conformal regime boundary alpha >= 1/(n+1) and checkpoint alpha spending."""
+    from ips.models.evt import compute_split_conformal_threshold, allocate_checkpoint_alpha_budget
+
+    scores = np.linspace(0.01, 1.0, 99)  # n=99 -> min_supported_alpha = 1/(99+1) = 0.01
+    res_valid = compute_split_conformal_threshold(scores, target_fpr=0.05)
+    assert res_valid["valid_regime"] is True
+    assert pytest.approx(res_valid["min_supported_alpha"], 1e-6) == 0.01
+
+    res_invalid = compute_split_conformal_threshold(scores, target_fpr=0.001)  # < 0.01
+    assert res_invalid["valid_regime"] is False
+
+    eq = allocate_checkpoint_alpha_budget(0.003, [4, 8, 16], scheme="equal")
+    assert pytest.approx(sum(eq.values()), 1e-9) == 0.003
+    assert pytest.approx(eq[4], 1e-9) == 0.001
+
+    fl = allocate_checkpoint_alpha_budget(0.007, [4, 8, 16], scheme="front_loaded")
+    assert pytest.approx(sum(fl.values()), 1e-9) == 0.007
+    assert fl[4] > fl[8] > fl[16]
+
+
+def test_contamination_study_and_trimmed_loss(tmp_path):
+    """C12: Verify training-set contamination study and trimmed-loss mitigation."""
+    from ips.smoke.synth import generate_smoke_dataset
+    from ips.eval.contamination import run_contamination_study
+
+    df_tr = generate_smoke_dataset(
+        n_benign=120, n_attack=40, early_n=8, session_id="smoke_c12_tr",
+        out_csv=str(tmp_path / "tr.csv"), seed=301
+    )
+    df_cal = generate_smoke_dataset(
+        n_benign=80, n_attack=0, early_n=8, session_id="smoke_c12_cal",
+        out_csv=str(tmp_path / "cal.csv"), seed=302
+    )
+    df_te = generate_smoke_dataset(
+        n_benign=80, n_attack=40, early_n=8, session_id="smoke_c12_te",
+        out_csv=str(tmp_path / "te.csv"), seed=303
+    )
+
+    res_df = run_contamination_study(
+        df_tr, df_cal, df_te,
+        early_n=8,
+        contamination_rates=(0.0, 0.02, 0.05),
+        trim_pct=0.05,
+        epochs=4,
+        seed=42,
+        out_dir=str(tmp_path),
+    )
+    assert len(res_df) == 6  # 3 rates * 2 methods (standard_mse, trimmed_5pct)
+    assert set(res_df["training_method"].unique()) == {"standard_mse", "trimmed_5pct"}
+    assert (tmp_path / "contamination_study.csv").exists()
+
 

@@ -38,7 +38,7 @@ DEVICE_IPS = {
 
 
 def generate_flow_vector(
-    early_n: int = 12,
+    early_n: int = 16,
     device_class: str = "sensor",
     device_id: str = "sensor-01",
     is_attack: bool = False,
@@ -53,37 +53,42 @@ def generate_flow_vector(
     dirs = []
     iats = []
 
+    # ~15% of benign sensor/plug flows complete after 6 or 10 payload packets (short MQTT sessions)
+    flow_len = early_n
+    if not is_attack and device_class in ("sensor", "plug") and early_n >= 12 and random.random() < 0.15:
+        flow_len = random.choice([6, 10])
+
     if not is_attack:
         if device_class == "sensor":
             mean_iat = 10.0 * 1000.0 * drift_scale
-            for i in range(early_n):
+            for i in range(flow_len):
                 dirs.append(0 if i % 2 == 0 else 1)
                 sizes.append(int(random.gauss(64 if i % 2 == 0 else 48, 9)))
                 if i > 0:
                     iats.append(max(10.0, random.gauss(mean_iat, mean_iat * 0.15)))
         elif device_class == "plug":
             mean_iat = 30.0 * 1000.0 * drift_scale
-            for i in range(early_n):
+            for i in range(flow_len):
                 dirs.append(0 if i % 2 == 0 else 1)
                 sizes.append(int(random.gauss(50, 8)))
                 if i > 0:
                     iats.append(max(20.0, random.gauss(mean_iat, mean_iat * 0.10)))
         elif device_class == "thermostat":
             mean_iat = 15.0 * 1000.0 * drift_scale
-            for i in range(early_n):
+            for i in range(flow_len):
                 dirs.append(0 if i % 2 == 0 else 1)
                 sizes.append(int(random.gauss(140, 25)))
                 if i > 0:
                     iats.append(max(15.0, random.gauss(mean_iat, mean_iat * 0.12)))
         elif device_class == "camera":
             mean_iat = 0.5 * 1000.0 * drift_scale
-            for i in range(early_n):
+            for i in range(flow_len):
                 dirs.append(0 if i % 3 != 0 else 1)
                 sizes.append(int(random.gauss(1100, 150)))
                 if i > 0:
                     iats.append(max(2.0, random.gauss(mean_iat, mean_iat * 0.20)))
         else:
-            for i in range(early_n):
+            for i in range(flow_len):
                 dirs.append(0)
                 sizes.append(100)
                 if i > 0:

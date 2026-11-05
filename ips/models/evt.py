@@ -44,6 +44,74 @@ def compute_empirical_threshold(scores: np.ndarray, target_fpr: float = 0.001) -
     return float(np.percentile(scores, p * 100.0))
 
 
+def compute_split_conformal_threshold(scores: np.ndarray, target_fpr: float = 0.001) -> Dict[str, Any]:
+    """
+    Split-conformal threshold calibration (C9 / N9).
+    Uses order statistic index k = ceil((n + 1) * (1 - alpha)) on 1-indexed sorted calibration scores.
+    Guarantees finite-sample P(S_{n+1} > tau) <= alpha under exchangeability IFF alpha >= 1 / (n + 1).
+    When alpha < 1 / (n + 1), k > n (conformal runs out of samples, valid_regime=False).
+    """
+    scores = np.asarray(scores, dtype=np.float64)
+    scores = scores[np.isfinite(scores)]
+    n = len(scores)
+    if n == 0:
+        return {
+            "threshold": float("inf"),
+            "valid_regime": False,
+            "min_supported_alpha": 1.0,
+            "order_stat_idx": 0,
+            "n_calib": 0,
+        }
+
+    min_alpha = 1.0 / float(n + 1)
+    k_1idx = int(math.ceil((n + 1) * (1.0 - target_fpr)))
+    valid_regime = bool(target_fpr >= min_alpha and 1 <= k_1idx <= n)
+
+    sorted_scores = np.sort(scores)
+    if valid_regime:
+        tau = float(sorted_scores[k_1idx - 1])
+    else:
+        # Beyond sample support: conformal would require tau = +inf; report max(scores) as degenerate cap
+        # and flag valid_regime=False so callers know only EVT can extrapolate here.
+        tau = float(sorted_scores[-1])
+
+    return {
+        "threshold": tau,
+        "valid_regime": valid_regime,
+        "min_supported_alpha": min_alpha,
+        "order_stat_idx": k_1idx,
+        "n_calib": n,
+    }
+
+
+def allocate_checkpoint_alpha_budget(
+    target_fpr: float,
+    checkpoints: List[int],
+    scheme: str = "equal",
+) -> Dict[int, float]:
+    """
+    Split flow-level FPR budget alpha across K progressive checkpoints (C1 / N7)
+    such that sum_k alpha_k == target_fpr:
+      - 'equal': alpha_k = alpha / K
+      - 'front_loaded': alpha_k proportional to 2^{-(idx+1)}
+    """
+    k_count = len(checkpoints)
+    if k_count == 0:
+        return {}
+    if scheme == "equal":
+        per_k = float(target_fpr) / float(k_count)
+        return {int(ckpt): per_k for ckpt in checkpoints}
+    elif scheme == "front_loaded":
+        raw_weights = [math.pow(2.0, -(i + 1)) for i in range(k_count)]
+        total_w = sum(raw_weights)
+        return {
+            int(ckpt): float(target_fpr) * (w / total_w)
+            for ckpt, w in zip(checkpoints, raw_weights)
+        }
+    else:
+        raise ValueError(f"Unknown alpha_spending scheme '{scheme}'. Choose 'equal' or 'front_loaded'.")
+
+
 def fit_evt_threshold(scores: np.ndarray, target_fpr: float = 0.001,
                       high_quantile: Optional[float] = None,
                       candidate_quantiles: Tuple[float, ...] = (0.90, 0.92, 0.94, 0.95, 0.97),
@@ -69,6 +137,7 @@ def fit_evt_threshold(scores: np.ndarray, target_fpr: float = 0.001,
 
     three_sig = compute_3sigma_threshold(scores) if N > 0 else 0.0
     emp_q = compute_empirical_threshold(scores, target_fpr) if N > 0 else 0.0
+    conf_res = compute_split_conformal_threshold(scores, target_fpr)
 
     if N < min_excesses:
         return {
@@ -85,6 +154,9 @@ def fit_evt_threshold(scores: np.ndarray, target_fpr: float = 0.001,
             "target_fpr": target_fpr,
             "three_sigma": three_sig,
             "empirical_q": emp_q,
+            "conformal_q": conf_res["threshold"],
+            "conformal_valid_regime": conf_res["valid_regime"],
+            "conformal_min_alpha": conf_res["min_supported_alpha"],
         }
 
     # Build list of quantiles to evaluate via KS goodness-of-fit
@@ -138,6 +210,9 @@ def fit_evt_threshold(scores: np.ndarray, target_fpr: float = 0.001,
             "target_fpr": target_fpr,
             "three_sigma": three_sig,
             "empirical_q": emp_q,
+            "conformal_q": conf_res["threshold"],
+            "conformal_valid_regime": conf_res["valid_regime"],
+            "conformal_min_alpha": conf_res["min_supported_alpha"],
         }
 
     # Check if GPD fit is rejected by KS goodness-of-fit test
@@ -156,6 +231,9 @@ def fit_evt_threshold(scores: np.ndarray, target_fpr: float = 0.001,
             "target_fpr": target_fpr,
             "three_sigma": three_sig,
             "empirical_q": emp_q,
+            "conformal_q": conf_res["threshold"],
+            "conformal_valid_regime": conf_res["valid_regime"],
+            "conformal_min_alpha": conf_res["min_supported_alpha"],
         }
 
     u = best_fit["u"]
@@ -195,20 +273,24 @@ def fit_evt_threshold(scores: np.ndarray, target_fpr: float = 0.001,
         "target_fpr": target_fpr,
         "three_sigma": three_sig,
         "empirical_q": emp_q,
+        "conformal_q": conf_res["threshold"],
+        "conformal_valid_regime": conf_res["valid_regime"],
+        "conformal_min_alpha": conf_res["min_supported_alpha"],
     }
 
 
 def compute_calibration_curve(calib_scores: np.ndarray, test_benign_scores: np.ndarray,
                               target_fprs: Optional[List[float]] = None) -> List[Dict[str, Any]]:
-    """Compute target FPR vs achieved FPR on held-out benign test data with Clopper-Pearson CIs.
+    """Compute target FPR vs achieved FPR on held-out benign test data with Clopper-Pearson CIs (C9 / N9).
 
     Compares:
       1. EVT (POT GPD)
-      2. Empirical quantile
-      3. Fixed mean + 3*sigma (constant across target_fprs)
+      2. Split-conformal (finite-sample exact quantile when alpha >= 1/(n+1))
+      3. Empirical quantile
+      4. Fixed mean + 3*sigma (constant across target_fprs)
     """
     if target_fprs is None:
-        target_fprs = [0.05, 0.02, 0.01, 0.005, 0.002, 0.001]
+        target_fprs = [0.1, 0.05, 0.01, 0.005, 0.001, 0.0001]
 
     calib_scores = np.asarray(calib_scores, dtype=np.float64)
     test_benign_scores = np.asarray(test_benign_scores, dtype=np.float64)
@@ -225,9 +307,16 @@ def compute_calibration_curve(calib_scores: np.ndarray, test_benign_scores: np.n
         t_evt = evt_res["threshold"]
         t_emp = evt_res["empirical_q"]
 
+        conf_res = compute_split_conformal_threshold(calib_scores, target_fpr=q)
+        t_conf = conf_res["threshold"]
+
         fp_evt = int(np.sum(test_benign_scores >= t_evt))
         fpr_evt = fp_evt / n_test if n_test > 0 else 0.0
         ci_evt = clopper_pearson_ci(fp_evt, n_test)
+
+        fp_conf = int(np.sum(test_benign_scores >= t_conf))
+        fpr_conf = fp_conf / n_test if n_test > 0 else 0.0
+        ci_conf = clopper_pearson_ci(fp_conf, n_test)
 
         fp_emp = int(np.sum(test_benign_scores >= t_emp))
         fpr_emp = fp_emp / n_test if n_test > 0 else 0.0
@@ -242,11 +331,17 @@ def compute_calibration_curve(calib_scores: np.ndarray, test_benign_scores: np.n
             "n_test_benign": n_test,
             "min_n_for_bound": min_n_rule_of_three,
             "sample_size_sufficient": bool(n_test >= min_n_rule_of_three),
+            "conformal_valid_regime": bool(conf_res["valid_regime"]),
+            "conformal_min_supported_alpha": round(conf_res["min_supported_alpha"], 6),
             "evt_method": evt_res["method"],
             "evt_threshold": round(t_evt, 6),
             "evt_achieved_fpr": round(fpr_evt, 6),
             "evt_ci95_low": round(ci_evt[0], 6),
             "evt_ci95_high": round(ci_evt[1], 6),
+            "conformal_threshold": round(t_conf, 6),
+            "conformal_achieved_fpr": round(fpr_conf, 6),
+            "conformal_ci95_low": round(ci_conf[0], 6),
+            "conformal_ci95_high": round(ci_conf[1], 6),
             "emp_threshold": round(t_emp, 6),
             "emp_achieved_fpr": round(fpr_emp, 6),
             "emp_ci95_low": round(ci_emp[0], 6),

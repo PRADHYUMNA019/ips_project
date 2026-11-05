@@ -18,7 +18,9 @@
 # WP6 compiles these into C defines for ebpf/ips_engine.c and ctypes structs.
 
 system:
-  early_n: 12                # payload packets observed before EARLY_FLOW event
+  checkpoints: [4, 8, 16]    # progressive checkpoints N_1 < N_2 < ... < N_K (C1 / N7)
+  early_n: 16                # maximum payload packets observed (equals max(checkpoints))
+  alpha_spending: equal      # FPR budget split across checkpoints: equal | front_loaded
   flow_map_max: 4096         # LRU flow_state capacity
   verdict_map_max: 4096      # LRU verdict_map capacity
 
