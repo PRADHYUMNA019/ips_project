@@ -382,6 +382,44 @@ def test_leakage_reconciliation_against_egress_pcap_b8():
     assert rec_fail["discrepancy"] == 30
 
 
+def test_sticky_drop_verdict_c2():
+    """C2: Verify DROP verdicts are sticky and never overwritten by subsequent benign checkpoints."""
+    from ips.engine.engine import IPSEngine, MockBPFBackend
+    from ips.engine.schema import make_flow_key, VERDICT_DROP, VERDICT_BYPASS
+
+    backend = MockBPFBackend(early_n=16, checkpoints=[4, 8, 16])
+    engine = IPSEngine(backend=backend, mode_override="enforce", bypass_override=True)
+
+    fk = make_flow_key("10.0.1.4", 55555, "10.0.2.10", 8883, "TCP")
+    now_ns = 1_000_000_000
+
+    # 1. First event at checkpoint 4: anomalous -> triggers DROP
+    ev4 = {
+        "ip_a": "10.0.1.4", "port_a": 55555, "ip_b": "10.0.2.10", "port_b": 8883,
+        "proto": "TCP", "initiator_ip": "10.0.1.4", "valid_len": 4, "checkpoint_idx": 0,
+        "sizes": [100, 100, 100, 100], "dirs": [0, 0, 0, 0], "iat_ns": [1000, 1000, 1000],
+    }
+    engine.ckpt_thresholds[4] = 0.0001  # Force anomaly at ckpt 4
+    dec4 = engine.handle_early_flow_event(ev4, now_ns=now_ns)
+    assert dec4["verdict_written"] == "DROP"
+    assert backend.get_verdict(fk, now_ns) == VERDICT_DROP
+
+    # 2. Subsequent event on same flow at final checkpoint 16: scores benign
+    ev16 = {
+        "ip_a": "10.0.1.4", "port_a": 55555, "ip_b": "10.0.2.10", "port_b": 8883,
+        "proto": "TCP", "initiator_ip": "10.0.1.4", "valid_len": 16, "checkpoint_idx": 2,
+        "sizes": [100] * 16, "dirs": [0] * 16, "iat_ns": [1000] * 15,
+    }
+    engine.threshold = 999.0
+    engine.ckpt_thresholds[16] = 999.0  # Force benign
+    dec16 = engine.handle_early_flow_event(ev16, now_ns=now_ns + 100_000_000)
+
+    # Must NOT be BYPASS, and backend verdict must remain VERDICT_DROP!
+    assert backend.get_verdict(fk, now_ns + 100_000_000) == VERDICT_DROP, "DROP verdict was overwritten by later BYPASS!"
+    assert dec16["verdict_written"] != "BYPASS"
+
+
+
 
 
 

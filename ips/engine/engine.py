@@ -525,7 +525,11 @@ class IPSEngine:
 
         verdict_written = "NONE"
         if self.mode == "enforce":
-            if is_anomaly:
+            current_v = self.backend.get_verdict(fk, now_ns)
+            if current_v == VERDICT_DROP:
+                # DROP is sticky (C2): once dropped, subsequent checkpoints cannot overwrite with BYPASS
+                verdict_written = "DROP_STICKY"
+            elif is_anomaly:
                 self.backend.set_verdict(fk, VERDICT_DROP, now_ns + self.drop_ttl_ns)
                 verdict_written = "DROP"
             elif is_final_checkpoint and self.bypass_enabled:
