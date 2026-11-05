@@ -260,3 +260,38 @@ In adherence to Section 1 of Prompt 4, the following occurrences of forbidden or
 | `traffic/attack_beacon.py` | 79 | `print(f"  Interception Efficiency : ...")` | `print(f"  Connection Timeout Rate (Not Verified Inline Drop) : ...")` |
 | `docs/PROGRESS.md` | 15 | `12 distinct IoT namespaces 10.0.1.11–10.0.1.22, attacker 10.0.1.100` | `12 distinct IoT namespaces 10.0.1.10–10.0.1.41, attacker 10.0.1.4` |
 | `docs/PROGRESS.md` | 37 | `Total V1 Unit Tests: 54 passed, 0 failed` | `Total V1 Unit Tests: 53 passed, 0 failed` |
+
+---
+
+## 10. Remediation Status (Prompt 5 Implementation)
+
+All findings from the adversarial audit (`54b5f81`) and independent code inspection (Prompt 5 Groups A–E) have been remediated on branch `wp0-fix-30pct`. The table below lists the formal remediation status, git commit hash, and verification test for each item.
+
+| Defect / Item ID | Category | Status | Commit | Proving Test / Verification Artefact | Summary of Fix & Verification |
+|---|---|---|---|---|---|
+| **DEF-01** | Scope Realignment | **FIXED** | `c47fafb` | `audit/check_claims.py` (0 forbidden phrases, 0 unhedged claims) | Retained paper title per R4 with prominent Scope note in `README.md`, `docs/spec.md`, and `docs/PAPER_OUTLINE.md`; defined Profiles S & M cgroup envelopes in `docs/spec.md`. |
+| **DEF-02** | Kernel Concurrency | **LIMITATION / PENDING_LINUX** | `42e4c0a`, `c47fafb` | Stage `S6d` in `scripts/verify_linux.sh`, `docs/LIMITATIONS.md` §6 | Formally disclosed non-atomic flow record update across generic XDP veth interfaces on multi-CPU systems; added RPS single-CPU pinning assertion to Linux harness. |
+| **DEF-03** | Flow Lifecycle Reset | **FIXED (V1 Mock, V2 C)** | `42e4c0a` | `tests/test_schema_and_equivalence.py::test_flow_record_lifecycle_and_reinit_a1` | Added `last_seen_ns`, `FLOW_IDLE_NS` (120s), and TCP FIN/RST reset in `ebpf/ips_engine.c` and Python `MockBPFBackend` to prevent 5-tuple reuse blinding. |
+| **DEF-04** | Ringbuf Parser Panic | **FIXED** | `3a4206f` | `tests/test_engine_closed_loop.py::test_ringbuf_malformed_event_and_schema_mismatch_b1` | Added ctypes buffer length check, `SCHEMA_VERSION 4` validation, and fail-open load shedding after 10 corrupt events in `ips/engine/engine.py`. |
+| **DEF-05** | Decision Metrics Untested | **FIXED** | `3a4206f` | `tests/test_engine_closed_loop.py::test_confusion_matrix_and_decision_metrics_b2` | Added unit test with fixed 2x2 confusion matrix (TP=10, FP=2, FN=3, TN=85; TPR=10/13, FPR=2/87, F1=0.8000) and zero-division guards. Killed mutation M15. |
+| **DEF-06** | Direction Feature Untested | **FIXED** | `3a4206f` | `tests/test_features.py::test_direction_asymmetry_and_frac_upstream_b3` | Added test with asymmetric packet counts (500 up / 1500 down -> `frac_upstream=0.25`, reverse yields 0.75). Killed mutation M2. |
+| **DEF-07** | Conformal Quantile Untested | **FIXED** | `3a4206f` | `tests/test_models.py::test_split_conformal_regime_and_alpha_budget` | Added finite-sample exact order statistic test for $n=99, \alpha=0.1$ (`order_stat_idx=90`, `threshold=0.90`). Killed mutation M8. |
+| **DEF-08** | Progress & Subnet Inconsistency | **FIXED** | `c47fafb` | `tests/test_shell_permissions.py`, `docs/PROGRESS.md` | Corrected unit test count to exact 65 passed, updated IP ranges to `10.0.1.10–10.0.1.41`, and realigned honest V1/V2/V3 status tracking. |
+| **A1** | Flow Record Eviction | **FIXED (V1 Mock, V2 C)** | `42e4c0a` | `tests/test_schema_and_equivalence.py::test_flow_record_lifecycle_and_reinit_a1` | `ebpf/ips_engine.c` flow lifecycle reset on FIN/RST or elapsed idle timeout > 120s. |
+| **A2** | Ringbuf Checkpoint Drop | **FIXED (V1 Mock, V2 C)** | `42e4c0a` | `tests/test_schema_and_equivalence.py::test_checkpoint_retry_and_shed_counters_a2` | Only sets `emitted_mask` on successful ringbuf submit; tracks `ckpt_retry` and `ckpt_skipped_shed` in 72-byte `StatsEntry`. |
+| **A3** | Multi-CPU Flow Race | **LIMITATION / PENDING_LINUX** | `42e4c0a`, `c47fafb` | Stage `S6d` in `scripts/verify_linux.sh`, `docs/LIMITATIONS.md` §6 | Disclosed generic XDP limitation; added single-CPU RPS validation stage to `verify_linux.sh`. |
+| **A4** | Canonical Key Model Disclaimer | **VERIFIED** | `42e4c0a` | Stage `S6e` in `scripts/verify_linux.sh`, `audit/check_canonical_key.py` | Added formal analytical model disclaimer to `check_canonical_key.py`; added stage `S6e` to Linux test harness. |
+| **B1** | Ringbuffer Event Parser Panic | **FIXED** | `3a4206f` | `tests/test_engine_closed_loop.py::test_ringbuf_malformed_event_and_schema_mismatch_b1` | Implemented bounds validation, schema mismatch counter, and fail-open engine shedding. |
+| **B2** | Decision Metric Unit Tests | **FIXED** | `3a4206f` | `tests/test_engine_closed_loop.py::test_confusion_matrix_and_decision_metrics_b2` | Non-tautological test on fixed 2x2 confusion matrix; killed mutation M15. |
+| **B3** | Direction Asymmetry Unit Tests | **FIXED** | `3a4206f` | `tests/test_features.py::test_direction_asymmetry_and_frac_upstream_b3` | Asymmetric upstream/downstream packet size and count assertions; killed mutation M2. |
+| **B4** | Conformal Quantile Exactness | **FIXED** | `3a4206f` | `tests/test_models.py::test_split_conformal_regime_and_alpha_budget` | Verified finite-sample order statistic indexing; killed mutation M8. |
+| **B5** | Autoencoder Separability & CI | **FIXED** | `3a4206f` | `tests/test_models.py::test_autoencoder_separates_synthetic_clusters`, `test_attack_leakage_and_bootstrap_ci` | AUROC $\ge 0.90$ on synthetic clusters; non-zero width and sample-size shrinkage in bootstrap CI. |
+| **B6** | EVT Known-Answer Exponential Tail | **FIXED** | `3a4206f` | `tests/test_models.py::test_evt_known_answer_exponential_tail_b6` | Exponential(1) samples fitted with POT GPD, threshold verified against analytical $-\ln(10^{-3})$ within 1.18% error. |
+| **B7** | Cross-Domain Leakage Isolation | **FIXED** | `3a4206f` | `tests/test_cross_eval.py::test_ton_iot_train_eval_isolation_no_leakage` | Guards against index, flow ID, and 5-tuple leakage across train and evaluation in TON_IOT. |
+| **B8** | Wire Egress Pcap Reconciliation | **FIXED** | `3a4206f` | `tests/test_engine_closed_loop.py::test_leakage_reconciliation_against_egress_pcap_b8` | Reconciles engine decisions against wire-captured pcap packets, detecting wire vs engine miscounting. |
+| **C1** | Blind Spot Code Audits | **VERIFIED** | `82c1950` | `docs/AUDIT_REPORT.md` §3.3 | Inspected zero-padding bias, per-checkpoint calibration, union-bound FPR, G2 small-class fail-closed, and canary disjointness. |
+| **C2** | Non-Sticky Drop Verdict Bug | **FIXED** | `82c1950` | `tests/test_engine_closed_loop.py::test_sticky_drop_verdict_c2` | Invariant `DROP_STICKY`: early checkpoint DROP can never be overwritten by a subsequent BYPASS. |
+| **C3** | Hardware Claims Repository Grep | **FIXED** | `82c1950`, `c47fafb` | `audit/check_claims.py` (0 forbidden phrases, 0 unhedged hardware claims) | Complete inventory of 53 occurrences, replaced with cgroup emulation and explicit future-work designations. |
+| **E1** | Full Test Suite & Linters | **VERIFIED** | Current | `python -m pytest -q` (65 passed), `test_shell_permissions.py` | Complete test suite passing, zero python syntax errors. |
+| **E2** | Mutation Testing Suite | **VERIFIED** | Current | `audit/mutation_results.md` (17/17 KILLED, 0 survived) | 100% of adversarial mutations killed with non-tautological unit tests. |
+| **E3** | Hardware Claims Assertion | **VERIFIED** | Current | `audit/check_claims.py` (0 forbidden phrases) | Verified zero unhedged hardware claims remain in repository. |

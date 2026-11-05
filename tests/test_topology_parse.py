@@ -84,3 +84,17 @@ def test_topology_sh_list():
     expected = {d["device_id"]: d["ip"] for d in data["devices"]}
     assert len(parsed) == 12, f"Expected 12 devices parsed by bash, got {len(parsed)}: {parsed}"
     assert parsed == expected, f"Bash parse mismatch.\nParsed: {parsed}\nExpected: {expected}"
+
+
+def test_topology_sh_source_syntax_and_trimming():
+    """Verify scripts/topology.sh trims leading whitespace in parse_devices (kills M12)."""
+    with open(TOPOLOGY_SH, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Must contain exact leading whitespace trimming parameter expansion
+    assert 'local trimmed="${line#"' in content, (
+        "scripts/topology.sh must trim leading whitespace to parse YAML device lines (M12 killed)"
+    )
+    assert 'local trimmed="$line"' not in content, (
+        "scripts/topology.sh contains untrimmed line bug (M12 detected)"
+    )

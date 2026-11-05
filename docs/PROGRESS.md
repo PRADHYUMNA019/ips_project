@@ -26,7 +26,7 @@
 ## V1 Unit Test Summary (Executed on Host)
 - `tests/test_cross_eval.py`: 1 passed
 - `tests/test_dataset_adapters.py`: 6 passed
-- `tests/test_drift_guard.py`: 4 passed
+- `tests/test_drift_guard.py`: 5 passed
 - `tests/test_engine_closed_loop.py`: 11 passed
 - `tests/test_features.py`: 7 passed
 - `tests/test_generator.py`: 5 passed
@@ -36,8 +36,8 @@
 - `tests/test_schema_and_equivalence.py`: 8 passed
 - `tests/test_shell_permissions.py`: 2 passed
 - `tests/test_splits_and_joins.py`: 3 passed
-- `tests/test_topology_parse.py`: 2 passed
-- **Total V1 Unit Tests**: **63 passed, 0 failed**
+- `tests/test_topology_parse.py`: 3 passed
+- **Total V1 Unit Tests**: **65 passed, 0 failed**
 
 ## Not Run Here (V2 Linux Required / V3 Real Data Required)
 - `sudo bash scripts/verify_linux.sh` (Stages S0, S2–S4, S6, S6b, S6c require Linux root + network namespaces + BCC + `tc netem`)

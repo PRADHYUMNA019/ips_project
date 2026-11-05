@@ -3,6 +3,7 @@
 tests/test_models.py — Unit tests for ML models, EVT thresholding, and quantization.
 """
 import os
+import math
 import json
 import tempfile
 import pytest
@@ -44,6 +45,12 @@ def test_evt_gpd_fitting_and_threshold():
     assert np.isfinite(res["threshold"])
     assert "three_sigma" in res
     assert "empirical_q" in res
+    # B6 / M7: Assert method is evt_gpd_pot and verify POT formula kills sign-flip mutant M7
+    assert res["method"] == "evt_gpd_pot"
+    ratio = (0.001 * float(res["N"])) / float(res["N_u"])
+    term = math.pow(ratio, -res["xi"]) - 1.0
+    expected_t = res["u"] + (res["sigma"] / res["xi"]) * term
+    assert pytest.approx(res["threshold"], 1e-6) == expected_t
 
 
 def test_evt_small_sample_fallback():

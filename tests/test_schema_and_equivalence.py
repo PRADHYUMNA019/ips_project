@@ -44,7 +44,9 @@ def test_c_header_and_ctypes_sync_across_early_n():
         assert ctypes.sizeof(schemas.VerdictEntry) == 16
         assert ctypes.sizeof(schemas.CfgEntry) == 16
         assert ctypes.sizeof(schemas.StatsEntry) == 72
-        # EarlyFlowEvent must be 8-byte aligned for ringbuf_reserve
+        # EarlyFlowEvent exact size and 8-byte alignment for ringbuf_reserve
+        expected_event_sizes = {4: 96, 8: 136, 12: 184, 16: 224, 24: 312}
+        assert ctypes.sizeof(schemas.EarlyFlowEvent) == expected_event_sizes[n]
         assert ctypes.sizeof(schemas.EarlyFlowEvent) % 8 == 0
 
     default_hdr = generate_c_header()

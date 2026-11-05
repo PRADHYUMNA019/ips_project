@@ -44,6 +44,13 @@ def test_split_integrity_assertions_a_b_c_d():
     with pytest.raises(ValueError, match="CRITICAL SPLIT LEAKAGE"):
         verify_split_integrity({"train": df_s1, "calibration": df_s1}, min_calibration_flows=10)
 
+    # (b2) Attack flows mixed into calibration split -> must raise ValueError (kills M6)
+    df_attack_cal = pd.DataFrame([
+        {"session_id": "s_atk", "is_attack": 1, "label_family": "A1_flood", "in_attack_window": False}
+    ])
+    with pytest.raises(ValueError, match="CRITICAL SPLIT LEAKAGE.*attack flows found"):
+        verify_split_integrity({"train": df_s1, "calibration": df_attack_cal}, min_calibration_flows=10)
+
     # (b) Held-out family A3_c2 in validation -> must raise ValueError
     df_bad_val = pd.DataFrame([
         {"session_id": "s4", "is_attack": 1, "label_family": "A3_c2", "in_attack_window": True}

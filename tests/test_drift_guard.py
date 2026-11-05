@@ -69,6 +69,37 @@ def test_g2_small_class_limitation_and_rollback():
     assert guard_cam.threshold == pytest.approx(0.165)
 
 
+def test_g2_quorum_and_g3_periodicity_checks():
+    """Verify G2 cross-device quorum and G3 periodicity rejection (kills M10, M10b)."""
+    anchor, canary, init_t = _make_anchor_and_canary(42)
+    guard = PoisoningAwareDriftGuard(
+        device_class="sensor",
+        class_devices=["sen-01", "sen-02", "sen-03", "sen-04"],
+        initial_threshold=init_t,
+        anchor_benign_scores=anchor,
+        canary_dev_attack_scores=canary,
+        config=GuardConfig(min_persistence_windows=1),
+    )
+    # 1 device drifting out of 4 (required is ceil(0.5 * 4) = 2) -> must reject G2
+    win_g2 = [
+        {"device_id": "sen-01", "score": 0.50, "iat_ms": 400.0, "is_attack": False},
+        {"device_id": "sen-02", "score": 0.10, "iat_ms": 500.0, "is_attack": False},
+        {"device_id": "sen-03", "score": 0.10, "iat_ms": 500.0, "is_attack": False},
+        {"device_id": "sen-04", "score": 0.10, "iat_ms": 500.0, "is_attack": False},
+    ] * 10
+    res_g2 = guard.evaluate_window(win_g2, mode="guarded")
+    assert res_g2["status"] == "REJECTED_G2_INCONSISTENT_ACROSS_CLASS"
+
+    # All 4 devices drifting, but with strictly periodic IATs (60.0ms) -> must reject G3
+    win_g3 = [
+        {"device_id": did, "score": 0.25, "iat_ms": 60.0, "is_attack": False}
+        for did in ["sen-01", "sen-02", "sen-03", "sen-04"]
+        for _ in range(10)
+    ]
+    res_g3 = guard.evaluate_window(win_g3, mode="guarded")
+    assert res_g3["status"] == "REJECTED_G3_PERIODIC_STREAM"
+
+
 def test_s1_benign_drift_and_s3_boiling_frog_and_s4_coordinated(tmp_path):
     """Verify S1 benign adaptation, S3 single-device poisoning rejection, and S4 coordinated G2 bypass + G4 defense."""
     df = run_all_drift_scenarios(str(tmp_path), is_smoke=True)
