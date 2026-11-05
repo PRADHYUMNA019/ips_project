@@ -181,3 +181,26 @@ def test_reused_5tuple_flow_instances_and_metadata(tmp_path):
         assert col not in feat_cols
         assert col in meta_df.columns
 
+
+def test_direction_asymmetry_and_frac_upstream_b3():
+    """B3 (DEF-06 / M2): Explicitly verify directional byte asymmetry and frac_upstream calculation."""
+    from ips.features import build_early_vector, get_feature_names
+
+    names = get_feature_names(8)
+    idx_frac = names.index("frac_upstream")
+    idx_bytes_up = names.index("bytes_up")
+    idx_bytes_down = names.index("bytes_down")
+
+    # 1. 500 up (dir=0), 1500 down (dir=1) -> frac_upstream = 500 / 2000 = 0.25
+    vec1 = build_early_vector([500, 1500], [0, 1], [10.0], early_n=8)
+    assert vec1[idx_frac] == pytest.approx(0.25, abs=1e-5)
+    assert vec1[idx_bytes_up] == pytest.approx(500.0 / 15000.0, abs=1e-5)
+    assert vec1[idx_bytes_down] == pytest.approx(1500.0 / 15000.0, abs=1e-5)
+
+    # 2. Reverse direction: 1500 up (dir=0), 500 down (dir=1) -> frac_upstream = 1500 / 2000 = 0.75
+    vec2 = build_early_vector([1500, 500], [0, 1], [10.0], early_n=8)
+    assert vec2[idx_frac] == pytest.approx(0.75, abs=1e-5)
+    assert vec2[idx_bytes_up] == pytest.approx(1500.0 / 15000.0, abs=1e-5)
+    assert vec2[idx_bytes_down] == pytest.approx(500.0 / 15000.0, abs=1e-5)
+
+

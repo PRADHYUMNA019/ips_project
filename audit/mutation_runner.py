@@ -34,9 +34,12 @@ MUTATIONS = [
         "file": "ips/features.py",
         "target": "if dirs[i] == 0:\n            bytes_up += sz",
         "replacement": "if dirs[i] == 1:\n            bytes_up += sz  # M2: flip direction convention",
-        "tests": ["tests/test_features.py::test_pcap_to_flows_golden_fixture"],
+        "tests": [
+            "tests/test_features.py::test_pcap_to_flows_golden_fixture",
+            "tests/test_features.py::test_direction_asymmetry_and_frac_upstream_b3",
+        ],
         "desc": "Flip direction convention (0 = client->server from LAN side)",
-        "should_catch": "tests/test_features.py::test_pcap_to_flows_golden_fixture",
+        "should_catch": "tests/test_features.py::test_direction_asymmetry_and_frac_upstream_b3",
     },
     {
         "id": "M3",
@@ -86,8 +89,8 @@ MUTATIONS = [
     {
         "id": "M8",
         "file": "ips/models/evt.py",
-        "target": "k = int(np.ceil((n + 1) * (1.0 - alpha)))",
-        "replacement": "k = int(np.ceil((n + 1) * (1.0 - alpha))) + 1  # M8: off-by-one",
+        "target": "k_1idx = int(math.ceil((n + 1) * (1.0 - target_fpr)))",
+        "replacement": "k_1idx = int(math.ceil((n + 1) * (1.0 - target_fpr))) + 1  # M8: off-by-one",
         "tests": ["tests/test_models.py::test_split_conformal_regime_and_alpha_budget"],
         "desc": "Off-by-one in split-conformal quantile index",
         "should_catch": "tests/test_models.py::test_split_conformal_regime_and_alpha_budget",
@@ -160,9 +163,12 @@ MUTATIONS = [
         "file": "ips/eval/harness.py",
         "target": "fpr = (fp / max(1, (fp + tn)))",
         "replacement": "fpr = (fp / max(1, (tp + fn)))  # M15: wrong FPR denominator",
-        "tests": ["tests/test_engine_closed_loop.py::test_operational_harm_and_netem_impairment_c10_c11"],
+        "tests": [
+            "tests/test_engine_closed_loop.py::test_operational_harm_and_netem_impairment_c10_c11",
+            "tests/test_engine_closed_loop.py::test_confusion_matrix_and_decision_metrics_b2",
+        ],
         "desc": "Corrupt FPR denominator (fp/(tp+fn) instead of fp/(fp+tn))",
-        "should_catch": "tests/test_engine_closed_loop.py::test_operational_harm_and_netem_impairment_c10_c11",
+        "should_catch": "tests/test_engine_closed_loop.py::test_confusion_matrix_and_decision_metrics_b2",
     },
     {
         "id": "M16",

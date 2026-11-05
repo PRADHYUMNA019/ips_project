@@ -82,6 +82,32 @@ def compute_attack_leakage(
     }
 
 
+def reconcile_leakage_with_egress(
+    engine_stats: Dict[str, int],
+    ingress_pkts: int,
+    egress_pcap_pkts: int,
+    tolerance: int = 0,
+) -> Dict[str, Any]:
+    """
+    Compare engine-reported drop counter against ground-truth wire counts (B8):
+    Ground truth dropped = ingress_pkts - egress_pcap_pkts.
+    If engine_stats['pkts_dropped_verdict'] deviates from ground truth, flag metric_integrity_failure.
+    """
+    expected_dropped = max(0, int(ingress_pkts) - int(egress_pcap_pkts))
+    reported_dropped = int(engine_stats.get("pkts_dropped_verdict", 0))
+    discrepancy = abs(reported_dropped - expected_dropped)
+    has_failure = discrepancy > tolerance
+
+    return {
+        "ingress_pkts": int(ingress_pkts),
+        "egress_pcap_pkts": int(egress_pcap_pkts),
+        "expected_dropped": expected_dropped,
+        "engine_reported_dropped": reported_dropped,
+        "discrepancy": discrepancy,
+        "metric_integrity_failure": has_failure,
+    }
+
+
 def compute_operational_harm_metrics(
     fpr: float,
     drop_ttl_s: float = 60.0,
@@ -177,9 +203,9 @@ def evaluate_flow_decisions(
 
     n_atk = tp + fn
     n_ben = fp + tn
-    tpr = (tp / n_atk) if n_atk > 0 else 0.0
-    fpr = (fp / n_ben) if n_ben > 0 else 0.0
-    prec = (tp / (tp + fp)) if (tp + fp) > 0 else 0.0
+    tpr = (tp / max(1, n_atk)) if n_atk > 0 else 0.0
+    fpr = (fp / max(1, (fp + tn)))
+    prec = (tp / max(1, (tp + fp))) if (tp + fp) > 0 else 0.0
     f1 = (2 * prec * tpr / (prec + tpr)) if (prec + tpr) > 0 else 0.0
     fpr_ci_lo, fpr_ci_hi = clopper_pearson_ci(fp, max(1, n_ben), alpha=0.05)
 
@@ -207,6 +233,9 @@ def evaluate_flow_decisions(
         "mean_payload_pkts_at_verdict": round(float(np.mean(pkts_at_verdict_list)), 2) if pkts_at_verdict_list else 0.0,
         **harm,
     }
+
+
+evaluate_run_metrics = evaluate_flow_decisions
 
 
 def simulate_closed_loop_workload(

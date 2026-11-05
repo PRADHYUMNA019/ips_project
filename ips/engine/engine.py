@@ -356,6 +356,7 @@ class IPSEngine:
         )
         self.decisions_log: List[Dict[str, Any]] = []
         self.watchdog_log: List[Dict[str, Any]] = []
+        self.schema_mismatch_count = 0
 
         # Load model card & ONNX Runtime sessions (global + per-checkpoint) if available
         self.threshold = 0.25
@@ -442,6 +443,35 @@ class IPSEngine:
         mse = float(np.mean(sq_err))
         infer_ms = (time.perf_counter() - t0) * 1000.0
         return mse, recon, infer_ms
+
+    def parse_ringbuf_event(self, data, size: int) -> Optional[Dict[str, Any]]:
+        """
+        Safely unpack and validate a ringbuffer event from XDP fast path (B1 / DEF-04).
+        Validates size >= ctypes.sizeof(EarlyFlowEvent) and ev.schema_version == SCHEMA_VERSION.
+        If invalid, increments schema_mismatch; if schema_mismatch > 10, triggers load shedding.
+        """
+        expected_size = ctypes.sizeof(self.backend.schemas.EarlyFlowEvent)
+        if size < expected_size:
+            self._handle_schema_mismatch(f"Buffer size {size} < expected {expected_size}")
+            return None
+
+        ev_struct = ctypes.cast(data, ctypes.POINTER(self.backend.schemas.EarlyFlowEvent)).contents
+        if ev_struct.schema_version != SCHEMA_VERSION:
+            self._handle_schema_mismatch(
+                f"Schema version mismatch: event has {ev_struct.schema_version}, engine expects {SCHEMA_VERSION}"
+            )
+            return None
+
+        return event_to_dict(ev_struct)
+
+    def _handle_schema_mismatch(self, reason: str):
+        self.schema_mismatch_count += 1
+        if hasattr(self.backend, "stats") and "schema_mismatch" in self.backend.stats:
+            self.backend.stats["schema_mismatch"] += 1
+        if self.schema_mismatch_count > 10:
+            if not self.shed_active:
+                self.shed_active = True
+                self.backend.set_shed(1)
 
     def handle_early_flow_event(self, ev_dict: Dict[str, Any], now_ns: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -612,8 +642,9 @@ def run_cli():
 
     if not args.mock:
         def _ringbuf_cb(ctx, data, size):
-            ev_struct = ctypes.cast(data, ctypes.POINTER(backend.schemas.EarlyFlowEvent)).contents
-            ev_dict = event_to_dict(ev_struct)
+            ev_dict = engine.parse_ringbuf_event(data, size)
+            if ev_dict is None:
+                return 0
             if ev_fp:
                 ev_fp.write(json.dumps(ev_dict) + "\n")
                 ev_fp.flush()

@@ -3,6 +3,7 @@
 tests/test_engine_closed_loop.py — V1 unit tests for WP7 (ips/engine/engine.py and ips/eval/harness.py).
 """
 import pytest
+import numpy as np
 from ips.engine.schema import (
     load_system_config,
     make_flow_key,
@@ -14,6 +15,7 @@ from ips.engine.engine import IPSEngine, MockBPFBackend
 from ips.eval.harness import (
     compute_bootstrap_ci,
     compute_attack_leakage,
+    reconcile_leakage_with_egress,
     simulate_closed_loop_workload,
 )
 
@@ -144,9 +146,27 @@ def test_attack_leakage_and_bootstrap_ci():
     assert leak["post_verdict_leaked_pkts"] == 0
     assert leak["leakage_rate"] == pytest.approx(0.12)
 
-    mean_v, lo, hi = compute_bootstrap_ci([10.0, 12.0, 14.0, 16.0, 18.0])
+    mean_v, lo, hi = compute_bootstrap_ci([10.0, 12.0, 14.0, 16.0, 18.0], seed=42)
     assert mean_v == pytest.approx(14.0)
     assert lo <= mean_v <= hi
+
+    # B5: Non-tautological bootstrap CI assertions:
+    # 1. CI width is strictly positive
+    assert (hi - lo) > 0.0
+
+    # 2. Seed determinism: fixed seed produces identical bounds
+    mean_v2, lo2, hi2 = compute_bootstrap_ci([10.0, 12.0, 14.0, 16.0, 18.0], seed=42)
+    assert (mean_v, lo, hi) == (mean_v2, lo2, hi2)
+
+    # 3. Sample size shrinkage: CI width shrinks as sample size increases
+    np.random.seed(42)
+    sample_small = np.random.normal(14.0, 2.0, size=10).tolist()
+    sample_large = np.random.normal(14.0, 2.0, size=500).tolist()
+    _, lo_s, hi_s = compute_bootstrap_ci(sample_small, seed=42)
+    _, lo_l, hi_l = compute_bootstrap_ci(sample_large, seed=42)
+    width_small = hi_s - lo_s
+    width_large = hi_l - lo_l
+    assert width_large < width_small, f"Expected CI width shrinkage: {width_large} >= {width_small}"
 
 
 def test_progressive_checkpoints_early_drop_late_bypass():
@@ -231,5 +251,137 @@ def test_operational_harm_and_netem_impairment_c10_c11(tmp_path):
     assert len(imp_df) == 15  # 3 ablations * 5 impairment profiles
     assert set(imp_df["ablation_mode"].unique()) == {"full_features", "no_iat_features", "no_size_features"}
     assert (tmp_path / "netem_impairment.csv").exists()
+
+
+def test_ringbuf_malformed_event_and_schema_mismatch_b1():
+    """B1 (DEF-04): Ringbuffer event parser safely rejects truncated buffer and schema mismatches, triggering shedding after >10."""
+    import ctypes
+    from ips.engine.engine import IPSEngine, MockBPFBackend
+    from ips.engine.schema import make_ctypes_schemas, SCHEMA_VERSION
+
+    backend = MockBPFBackend(early_n=16, checkpoints=[4, 8, 16])
+    engine = IPSEngine(backend=backend)
+
+    # 1. Truncated buffer (smaller than EarlyFlowEvent)
+    truncated_buf = (ctypes.c_char * 10)(*b"1234567890")
+    res = engine.parse_ringbuf_event(truncated_buf, size=10)
+    assert res is None
+    assert engine.schema_mismatch_count == 1
+    assert not backend.cfg["shed"]
+
+    # 2. Mismatched schema version (e.g. 99)
+    schemas = make_ctypes_schemas(16)
+    ev = schemas.EarlyFlowEvent()
+    ev.schema_version = 99
+    raw_bytes = ctypes.string_at(ctypes.byref(ev), ctypes.sizeof(ev))
+    buf = (ctypes.c_char * len(raw_bytes)).from_buffer_copy(raw_bytes)
+
+    res = engine.parse_ringbuf_event(buf, size=len(raw_bytes))
+    assert res is None
+    assert engine.schema_mismatch_count == 2
+    assert not backend.cfg["shed"]
+
+    # 3. Exceed 10 mismatches -> watchdog triggers fail-open load shedding
+    for _ in range(9):
+        engine.parse_ringbuf_event(truncated_buf, size=10)
+
+    assert engine.schema_mismatch_count == 11
+    assert engine.shed_active is True
+    assert backend.cfg["shed"] == 1, "Load shedding must activate after >10 schema mismatches"
+
+
+def test_confusion_matrix_and_decision_metrics_b2():
+    """B2 (DEF-05 / M15): Hand-computed 2x2 confusion matrix verification and edge case handling."""
+    from ips.eval.harness import evaluate_run_metrics
+
+    # Hand-crafted 2x2 matrix: TP=10, FP=2, FN=3, TN=85 (Total=100)
+    decisions = []
+    # 10 TP
+    for i in range(10):
+        decisions.append({
+            "ip_a": "10.0.1.4", "port_a": 1000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
+            "proto": "TCP", "initiator_ip": "10.0.1.4", "is_anomaly": True,
+            "time_to_verdict_ms": 2.5, "payload_packets_at_verdict": 4,
+        })
+    # 3 FN
+    for i in range(3):
+        decisions.append({
+            "ip_a": "10.0.1.4", "port_a": 2000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
+            "proto": "TCP", "initiator_ip": "10.0.1.4", "is_anomaly": False,
+        })
+    # 2 FP
+    for i in range(2):
+        decisions.append({
+            "ip_a": "10.0.1.11", "port_a": 3000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
+            "proto": "TCP", "initiator_ip": "10.0.1.11", "is_anomaly": True,
+            "time_to_verdict_ms": 3.0, "payload_packets_at_verdict": 4,
+        })
+    # 85 TN
+    for i in range(85):
+        decisions.append({
+            "ip_a": "10.0.1.11", "port_a": 4000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
+            "proto": "TCP", "initiator_ip": "10.0.1.11", "is_anomaly": False,
+        })
+
+    res = evaluate_run_metrics(decisions, attacker_ips=["10.0.1.4"])
+
+    assert res["tp"] == 10
+    assert res["fn"] == 3
+    assert res["fp"] == 2
+    assert res["tn"] == 85
+
+    # Hand-calculated theoretical metrics:
+    # TPR = 10 / 13 = 0.7692307...
+    assert res["tpr"] == pytest.approx(10.0 / 13.0, abs=1e-4)
+    # FPR = 2 / 87 = 0.0229885... (M15 mutates denominator to 13, which would give 2/13 = 0.1538)
+    assert res["fpr"] == pytest.approx(2.0 / 87.0, abs=1e-4)
+    # Precision = 10 / 12 = 0.833333...
+    assert res["precision"] == pytest.approx(10.0 / 12.0, abs=1e-4)
+    # F1 = 2 * (10/12) * (10/13) / ( (10/12) + (10/13) ) = 0.8000
+    assert res["f1"] == pytest.approx(0.8000, abs=1e-4)
+
+    # Edge Case 1: All Negatives (0 attack flows, 50 benign flows)
+    all_neg = [
+        {"ip_a": "10.0.1.11", "port_a": 5000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
+         "proto": "TCP", "initiator_ip": "10.0.1.11", "is_anomaly": False}
+        for i in range(50)
+    ]
+    res_neg = evaluate_run_metrics(all_neg, attacker_ips=["10.0.1.4"])
+    assert res_neg["tp"] == 0 and res_neg["fn"] == 0 and res_neg["fp"] == 0 and res_neg["tn"] == 50
+    assert res_neg["tpr"] == 0.0 and res_neg["fpr"] == 0.0 and res_neg["precision"] == 0.0 and res_neg["f1"] == 0.0
+
+    # Edge Case 2: All Positives (50 attack flows, 0 benign flows)
+    all_pos = [
+        {"ip_a": "10.0.1.4", "port_a": 6000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
+         "proto": "TCP", "initiator_ip": "10.0.1.4", "is_anomaly": True}
+        for i in range(50)
+    ]
+    res_pos = evaluate_run_metrics(all_pos, attacker_ips=["10.0.1.4"])
+    assert res_pos["tp"] == 50 and res_pos["fn"] == 0 and res_pos["fp"] == 0 and res_pos["tn"] == 0
+    assert res_pos["tpr"] == 1.0 and res_pos["fpr"] == 0.0 and res_pos["precision"] == 1.0 and res_pos["f1"] == 1.0
+
+    # Edge Case 3: Empty decisions list (Zero division)
+    res_empty = evaluate_run_metrics([], attacker_ips=["10.0.1.4"])
+    assert res_empty["tp"] == 0 and res_empty["fpr"] == 0.0 and res_empty["tpr"] == 0.0
+
+
+def test_leakage_reconciliation_against_egress_pcap_b8():
+    """B8: Compare engine-reported drops against egress capture and detect miscounting."""
+    # Scenario 1: Exact reconciliation (100 sent, 20 egressed -> 80 dropped in kernel)
+    stats_ok = {"pkts_dropped_verdict": 80}
+    rec_ok = reconcile_leakage_with_egress(stats_ok, ingress_pkts=100, egress_pcap_pkts=20)
+    assert rec_ok["metric_integrity_failure"] is False
+    assert rec_ok["discrepancy"] == 0
+
+    # Scenario 2: Engine miscount (e.g. engine reports 80 drops, but wire only saw 50 dropped / 50 leaked)
+    stats_divergent = {"pkts_dropped_verdict": 80}
+    rec_fail = reconcile_leakage_with_egress(stats_divergent, ingress_pkts=100, egress_pcap_pkts=50)
+    assert rec_fail["metric_integrity_failure"] is True
+    assert rec_fail["expected_dropped"] == 50
+    assert rec_fail["engine_reported_dropped"] == 80
+    assert rec_fail["discrepancy"] == 30
+
+
+
 
 

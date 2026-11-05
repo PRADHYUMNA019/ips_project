@@ -54,6 +54,26 @@ def test_evt_small_sample_fallback():
     assert np.isfinite(res["threshold"])
 
 
+def test_evt_known_answer_exponential_tail_b6():
+    """B6: Known-answer test fitting EVT GPD on Exponential(1) samples with analytical quantile -ln(q)."""
+    np.random.seed(42)
+    # Samples drawn from Exponential(1) where true survival is P(X > x) = exp(-x)
+    samples = np.random.exponential(scale=1.0, size=2000)
+    target_q = 1e-3
+    res = fit_evt_threshold(samples, target_fpr=target_q, high_quantile=0.90)
+
+    fitted_threshold = res["threshold"]
+    analytical_quantile = -np.log(target_q)  # -ln(1e-3) = 6.907755...
+
+    rel_error = abs(fitted_threshold - analytical_quantile) / analytical_quantile
+    assert rel_error < 0.15, (
+        f"EVT fitted threshold {fitted_threshold:.4f} deviated by {rel_error:.2%} "
+        f"from analytical quantile {analytical_quantile:.4f} (> 15% tolerance)"
+    )
+    assert fitted_threshold == pytest.approx(analytical_quantile, rel=0.15)
+
+
+
 def test_autoencoder_forward_and_explainability():
     """Verify PyTorch Autoencoder forward pass, reconstruction error, and top-3 explanations."""
     try:
@@ -132,8 +152,8 @@ def test_onnx_export_and_int8_quantization():
         assert comp["max_abs_diff"] < 0.2  # INT8 fidelity check
 
 
-def test_train_and_eval_pipeline_smoke():
-    """Verify end-to-end train_pipeline and run_offline_evaluation on smoke data."""
+def test_train_and_eval_pipeline_runs_only():
+    """Verify end-to-end train_pipeline and run_offline_evaluation runs without crashing on smoke data (B5)."""
     from ips.smoke.synth import generate_smoke_dataset
     from ips.models.train import train_pipeline
     from ips.models.eval_offline import run_offline_evaluation
@@ -167,6 +187,42 @@ def test_train_and_eval_pipeline_smoke():
         assert os.path.exists(os.path.join(out_dir, "progressive_pareto.csv"))
 
 
+def test_autoencoder_separates_synthetic_clusters():
+    """B5: Non-tautological test asserting autoencoder achieves AUROC >= 0.90 on separable synthetic clusters."""
+    try:
+        import torch
+    except ImportError:
+        pytest.skip("PyTorch not installed")
+    from scipy.stats import mannwhitneyu
+    from ips.models.autoencoder import EarlyFlowAutoencoder
+
+    torch.manual_seed(42)
+    np.random.seed(42)
+    d = 16
+
+    # Benign cluster around 0.1, anomaly cluster around 2.0
+    x_train_benign = np.random.normal(0.1, 0.05, size=(200, d)).astype(np.float32)
+    x_test_benign = np.random.normal(0.1, 0.05, size=(50, d)).astype(np.float32)
+    x_test_attack = np.random.normal(2.0, 0.2, size=(50, d)).astype(np.float32)
+
+    ae = EarlyFlowAutoencoder(input_dim=d)
+    opt = torch.optim.Adam(ae.parameters(), lr=0.01)
+    x_t = torch.from_numpy(x_train_benign)
+
+    for _ in range(30):
+        opt.zero_grad()
+        loss = torch.mean((ae(x_t) - x_t) ** 2)
+        loss.backward()
+        opt.step()
+
+    mse_ben, _ = ae.get_reconstruction_error(x_test_benign)
+    mse_atk, _ = ae.get_reconstruction_error(x_test_attack)
+
+    u_stat = mannwhitneyu(mse_atk, mse_ben).statistic
+    auroc = float(u_stat / (len(mse_atk) * len(mse_ben)))
+    assert auroc >= 0.90, f"Autoencoder failed to separate clusters: AUROC={auroc:.4f}"
+
+
 def test_split_conformal_regime_and_alpha_budget():
     """C9 & C1: Verify split-conformal regime boundary alpha >= 1/(n+1) and checkpoint alpha spending."""
     from ips.models.evt import compute_split_conformal_threshold, allocate_checkpoint_alpha_budget
@@ -175,6 +231,15 @@ def test_split_conformal_regime_and_alpha_budget():
     res_valid = compute_split_conformal_threshold(scores, target_fpr=0.05)
     assert res_valid["valid_regime"] is True
     assert pytest.approx(res_valid["min_supported_alpha"], 1e-6) == 0.01
+
+    # B4 (DEF-07 / M8): Exact finite-sample order statistic test
+    # 99 scores evenly spaced from 0.01 to 0.99, alpha=0.1
+    # k = ceil((99 + 1) * (1.0 - 0.1)) = 90 -> score[89] == 0.90
+    scores_99 = np.linspace(0.01, 0.99, 99)
+    res_b4 = compute_split_conformal_threshold(scores_99, target_fpr=0.1)
+    assert res_b4["valid_regime"] is True
+    assert res_b4["order_stat_idx"] == 90
+    assert res_b4["threshold"] == pytest.approx(0.90, abs=1e-5)
 
     res_invalid = compute_split_conformal_threshold(scores, target_fpr=0.001)  # < 0.01
     assert res_invalid["valid_regime"] is False
