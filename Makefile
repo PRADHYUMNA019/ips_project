@@ -15,7 +15,7 @@
 #   make clean         Remove build artifacts
 
 .PHONY: test test-all topo topo-down certs data-audit features train \
-        eval-offline eval-system reproduce clean
+        eval-offline eval-system reproduce clean audit
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -62,6 +62,14 @@ eval-system:
 
 reproduce:
 	python ips/eval/reproduce.py
+
+# ---------------------------------------------------------------------------
+# Audit suite (Prompt 4)
+# ---------------------------------------------------------------------------
+audit:
+	python audit/check_netns_refs.py
+	python audit/check_canonical_key.py
+	python audit/check_claims.py
 
 # ---------------------------------------------------------------------------
 # Cleanup
