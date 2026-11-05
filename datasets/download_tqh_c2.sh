@@ -1,31 +1,57 @@
 #!/usr/bin/env bash
-# datasets/download_tqh_c2.sh — Download TQH-C2 encrypted C2 dataset (Zenodo 21523144)
+# datasets/download_tqh_c2.sh — Download TQH-C2 Testbed D (Merlin HTTP/2-over-TLS C2).
+#
+# Reference: Zenodo record for TQH-C2 v1.2.0 (check exact Zenodo record URL before running:
+# UNVERIFIED URL PATTERN — verify record ID on Zenodo page if 21523144/1523144 redirects).
+#
+# Why Testbed D only:
+#   - Testbed D (TQH-C2_pcap_D_merlin_h2.zip, ~1.8 GB): Merlin C2 over HTTP/2-over-TLS (encrypted).
+#   - Testbed A (33.4 GB): Sliver over TLS, omitted due to size.
+#   - Testbed B: QUIC (not TLS/TCP).
+#   - Testbed C: Plain HTTP with AES body (NOT TLS on the wire — excluded per encrypted scope).
 set -euo pipefail
 
-DEST_DIR="$(cd "$(dirname "$0")/raw/tqh_c2" && pwd)"
-mkdir -p "$DEST_DIR"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET_DIR="$SCRIPT_DIR/raw/tqh_c2"
+mkdir -p "$TARGET_DIR"
+cd "$TARGET_DIR"
 
-SIZE_ESTIMATE="~379 MB (Testbed C archive)"
-URL="https://zenodo.org/records/21523144/files/testbed_c.tar.gz"
+# UNVERIFIED – check on the Zenodo page if Zenodo record path changes
+ZENODO_BASE="${ZENODO_BASE:-https://zenodo.org/records/21523144/files}"
 
-echo "================================================================================"
-echo "  TQH-C2 Dataset Downloader (Zenodo Record 21523144, CC-BY 4.0)"
-echo "  Contents: Sliver over TLS, Merlin over HTTP/3, Mythic pcaps and JA4 labels"
-echo "  Estimated download size: $SIZE_ESTIMATE"
-echo "  Destination: $DEST_DIR"
-echo "================================================================================"
+FILES=(
+    "SHA256SUMS_v120.txt"
+    "README_v120.md"
+    "TQH-C2_labels_D.zip"
+    "TQH-C2_features_D.zip"
+    "TQH-C2_pcap_D_merlin_h2.zip"
+)
 
-if [ -t 0 ]; then
-    read -r -p "Do you want to proceed with downloading $SIZE_ESTIMATE? [y/N]: " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        echo "Download cancelled by user."
+echo "=================================================================="
+echo "TQH-C2 Testbed D Downloader (Merlin over HTTP/2-over-TLS)"
+echo "Target directory: $TARGET_DIR"
+echo "Estimated download size: ~1.8 GB (TQH-C2_pcap_D_merlin_h2.zip)"
+echo "NOTE: Zenodo URL ($ZENODO_BASE) is UNVERIFIED – check on the Zenodo page."
+echo "=================================================================="
+
+if [[ "${1:-}" != "--yes" ]]; then
+    read -r -p "Proceed with download (~1.8 GB)? [y/N] " resp
+    if [[ ! "$resp" =~ ^[Yy]$ ]]; then
+        echo "Aborted by user."
         exit 0
     fi
 fi
 
-echo "[TQH-C2] Downloading testbed_c.tar.gz ..."
-curl -L -o "$DEST_DIR/testbed_c.tar.gz" "$URL"
-echo "[TQH-C2] Extracting archive ..."
-tar -xzf "$DEST_DIR/testbed_c.tar.gz" -C "$DEST_DIR"
-echo "[OK] TQH-C2 ready in $DEST_DIR"
+for f in "${FILES[@]}"; do
+    echo "[*] Downloading $f ..."
+    curl -fL -O "${ZENODO_BASE}/${f}" || {
+        echo "ERROR: Failed to download ${ZENODO_BASE}/${f}." >&2
+        echo "Please verify the Zenodo record URL on the TQH-C2 Zenodo page and set ZENODO_BASE." >&2
+        exit 1
+    }
+done
 
+echo "[*] Verifying SHA-256 checksums against SHA256SUMS_v120.txt..."
+sha256sum -c --ignore-missing SHA256SUMS_v120.txt
+
+echo "[+] TQH-C2 Testbed D download and SHA-256 check complete in $TARGET_DIR"

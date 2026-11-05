@@ -76,13 +76,16 @@ def extract_raw_pcap_flows(pcap_path: str, early_n: int = 12, lan_prefix: str = 
                     l4 = ip.data
                     proto = "TCP"
                     sport, dport = int(l4.sport), int(l4.dport)
-                    payload_len = len(l4.data)
+                    ip_tot_len = int(getattr(ip, "len", 0))
+                    hdr_len = int(getattr(ip, "hl", 5)) * 4 + int(getattr(l4, "off", 5)) * 4
+                    payload_len = (ip_tot_len - hdr_len) if ip_tot_len >= hdr_len else len(l4.data)
                     is_syn = bool(l4.flags & dpkt.tcp.TH_SYN) and not bool(l4.flags & dpkt.tcp.TH_ACK)
                 elif isinstance(ip.data, dpkt.udp.UDP):
                     l4 = ip.data
                     proto = "UDP"
                     sport, dport = int(l4.sport), int(l4.dport)
-                    payload_len = len(l4.data)
+                    udp_ulen = int(getattr(l4, "ulen", 0))
+                    payload_len = (udp_ulen - 8) if udp_ulen >= 8 else len(l4.data)
                     is_syn = False
                 else:
                     continue

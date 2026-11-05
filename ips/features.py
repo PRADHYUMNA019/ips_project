@@ -25,8 +25,18 @@ import numpy as np
 
 FORBIDDEN_COLUMNS = {
     "src_ip", "dst_ip", "src_port", "dst_port", "sport", "dport",
-    "ip_src", "ip_dst", "mac_src", "mac_dst", "ip_a", "ip_b", "port_a", "port_b"
+    "ip_src", "ip_dst", "mac_src", "mac_dst", "ip_a", "ip_b", "port_a", "port_b",
+    "proto", "start_ts", "end_ts", "instance", "session_id", "source",
+    "label_family", "is_attack", "encrypted", "domain", "raw_valid_len",
+    "device_id", "device_class",
 }
+
+METADATA_COLUMNS = [
+    "src_ip", "dst_ip", "sport", "dport", "proto",
+    "start_ts", "end_ts", "instance",
+    "session_id", "source", "label_family", "is_attack",
+    "encrypted", "domain",
+]
 
 FEATURE_NAMES_BASE = [
     "bytes_up", "bytes_down", "pkts_up", "pkts_down",
@@ -128,4 +138,56 @@ def assert_no_forbidden_features(feature_names: List[str]):
     inter = lower_names.intersection(FORBIDDEN_COLUMNS)
     if inter:
         raise ValueError(f"CRITICAL SHORTCUT LEARNING VIOLATION: Forbidden features found: {inter}")
+
+
+def split_metadata_and_features(df, early_n: int = 12):
+    """
+    Separate a flow DataFrame into (metadata_df, X_features_ndarray, feature_names).
+    Strictly asserts that no metadata or forbidden columns enter X_features_ndarray (B3).
+    """
+    feat_cols = get_feature_names(early_n)
+    assert_no_forbidden_features(feat_cols)
+    missing = [c for c in feat_cols if c not in df.columns]
+    if missing:
+        raise KeyError(f"DataFrame is missing required feature columns for early_n={early_n}: {missing[:5]}")
+
+    meta_cols = [c for c in df.columns if c not in feat_cols]
+    meta_df = df[meta_cols].copy()
+    x_mat = df[feat_cols].to_numpy(dtype=np.float32)
+    return meta_df, x_mat, feat_cols
+
+
+def recompute_early_matrix_for_k(df, k: int) -> np.ndarray:
+    """
+    Build the [M, 3*k + 8] feature matrix for any sub-window / checkpoint k
+    from a canonical flow DataFrame (or raw size/dir/iat DataFrame).
+    """
+    feat_cols_k = get_feature_names(k)
+    assert_no_forbidden_features(feat_cols_k)
+
+    # If df was already built at exact window k, return directly
+    if all(c in df.columns for c in feat_cols_k) and f"size_{k}" not in df.columns and "log_iat_0" in df.columns:
+        return df[feat_cols_k].to_numpy(dtype=np.float32)
+
+    has_log_iat = "log_iat_0" in df.columns
+    rows = []
+    for _, row in df.iterrows():
+        raw_vlen = int(row.get("raw_valid_len", k)) if "raw_valid_len" in row and not np.isnan(row["raw_valid_len"]) else k
+        vlen = min(raw_vlen, k)
+        if has_log_iat:
+            sizes = [int(round(float(row.get(f"size_{i}", 0.0)) * 1500.0)) for i in range(vlen)]
+            dirs = [int(round(float(row.get(f"dir_{i}", 0.0)))) for i in range(vlen)]
+            iats_ms = [
+                max(0.0, (10.0 ** float(row.get(f"log_iat_{i}", 0.0)) - 1.0) / 1000.0)
+                for i in range(max(0, vlen - 1))
+            ]
+        else:
+            sizes = [int(row[f"size_{i}"]) for i in range(vlen) if f"size_{i}" in row]
+            dirs = [int(row.get(f"dir_{i}", 0)) for i in range(len(sizes))]
+            iats_ms = [float(row.get(f"iat_{i}", 0.0)) for i in range(max(0, len(sizes) - 1))]
+        rows.append(build_early_vector(sizes, dirs, iats_ms, early_n=k))
+
+    return np.array(rows, dtype=np.float32) if rows else np.zeros((0, 3 * k + 8), dtype=np.float32)
+
+
 

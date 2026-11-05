@@ -1,6 +1,6 @@
 # Progress Tracker (`docs/PROGRESS.md`)
 
-> Last updated: WP9 & Part C complete (branch `wp0-fix-30pct`)
+> Last updated: Part A (A1–A8 corrections complete; next: Part B / WP2b dataset splits & cross-domain)
 > Platform detected: Windows (`platform.system() == "Windows"`, win32, Python 3.12.3)
 
 ## Verification Classes

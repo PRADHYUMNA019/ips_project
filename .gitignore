@@ -20,6 +20,9 @@ results/system/
 results/offline/
 results/smoke/
 results/verify/
+results/exp_*/
+results/data/
+results/splits/
 
 # Models (large binaries and runtime-generated cards)
 models/*.onnx

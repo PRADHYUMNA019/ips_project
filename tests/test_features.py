@@ -13,7 +13,9 @@ from ips.features import (
     build_early_vector,
     get_feature_names,
     assert_no_forbidden_features,
+    split_metadata_and_features,
     FORBIDDEN_COLUMNS,
+    METADATA_COLUMNS,
 )
 from ips.offline.pcap_to_flows import extract_flows_from_pcap
 
@@ -118,3 +120,64 @@ def test_pcap_to_flows_golden_fixture():
     finally:
         if os.path.exists(tmp_pcap):
             os.remove(tmp_pcap)
+
+
+def test_truncated_packet_header_length(tmp_path):
+    """A4(a): Verify truncated 200-byte packet uses ip.len - ip.hl*4 - tcp.off*4 (1400B), not len(tcp.data)."""
+    pcap_path = str(tmp_path / "truncated.pcap")
+    with open(pcap_path, "wb") as f:
+        writer = dpkt.pcap.Writer(f, snaplen=200)
+        # Build a packet with 1400B payload (total IP len = 1440), then truncate frame to 200 bytes
+        tcp = dpkt.tcp.TCP(sport=50000, dport=8443, data=b"X" * 1400, flags=dpkt.tcp.TH_PUSH | dpkt.tcp.TH_ACK)
+        ip = dpkt.ip.IP(src=b"\x0a\x00\x01\x0b", dst=b"\x0a\x00\x02\x0a", p=dpkt.ip.IP_PROTO_TCP, data=tcp)
+        ip.len = 20 + 20 + 1400  # 1440 bytes in IP header
+        eth = dpkt.ethernet.Ethernet(src=b"\x00" * 6, dst=b"\x00" * 6, type=dpkt.ethernet.ETH_TYPE_IP, data=ip)
+        raw_frame = bytes(eth)[:200]  # simulate Kitsune 200B snaplen truncation
+        writer.writepkt(raw_frame, ts=200.0)
+        writer.close()
+
+    df = extract_flows_from_pcap(pcap_path, early_n=12, lan_cidrs=["10.0.1.0/24"])
+    assert len(df) == 1
+    row = df.iloc[0]
+    # size_0 must reflect the true 1400B payload from IP header, NOT the truncated 146B slice
+    assert pytest.approx(row["size_0"], 0.001) == 1400.0 / 1500.0
+
+
+def test_reused_5tuple_flow_instances_and_metadata(tmp_path):
+    """A4(b) & B3: Verify FIN/new-SYN on same 5-tuple emits distinct instances and split_metadata_and_features works."""
+    pcap_path = str(tmp_path / "reused.pcap")
+    with open(pcap_path, "wb") as f:
+        writer = dpkt.pcap.Writer(f)
+        src = b"\xc0\xa8\x01\x0a"  # 192.168.1.10
+        dst = b"\x0a\x00\x02\x0a"  # 10.0.2.10
+
+        # Instance 0: SYN, 200B payload, FIN
+        for ts, flg, data in [
+            (10.0, dpkt.tcp.TH_SYN, b""),
+            (10.1, dpkt.tcp.TH_ACK | dpkt.tcp.TH_PUSH, b"A" * 200),
+            (10.2, dpkt.tcp.TH_FIN | dpkt.tcp.TH_ACK, b""),
+            # Instance 1 on same 5-tuple: SYN, 600B payload
+            (20.0, dpkt.tcp.TH_SYN, b""),
+            (20.1, dpkt.tcp.TH_ACK | dpkt.tcp.TH_PUSH, b"B" * 600),
+        ]:
+            tcp = dpkt.tcp.TCP(sport=51111, dport=8883, flags=flg, data=data)
+            ip = dpkt.ip.IP(src=src, dst=dst, p=dpkt.ip.IP_PROTO_TCP, data=tcp)
+            ip.len = len(ip)
+            writer.writepkt(bytes(dpkt.ethernet.Ethernet(data=ip)), ts=ts)
+        writer.close()
+
+    df = extract_flows_from_pcap(pcap_path, early_n=8, lan_prefix=None, lan_cidrs=["192.168.0.0/16"])
+    assert len(df) == 2
+    assert list(df["instance"]) == [0, 1]
+    assert pytest.approx(df.iloc[0]["size_0"], 0.001) == 200.0 / 1500.0
+    assert pytest.approx(df.iloc[1]["size_0"], 0.001) == 600.0 / 1500.0
+
+    for col in METADATA_COLUMNS:
+        assert col in df.columns
+
+    meta_df, x_mat, feat_cols = split_metadata_and_features(df, early_n=8)
+    assert x_mat.shape == (2, 3 * 8 + 8)
+    for col in METADATA_COLUMNS:
+        assert col not in feat_cols
+        assert col in meta_df.columns
+

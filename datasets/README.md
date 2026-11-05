@@ -1,42 +1,13 @@
-# Dataset Registry & Integration Documentation
+# Datasets & Offline Benchmarks (`datasets/README.md`)
 
-This directory houses download scripts, adapters, and schemas for datasets utilized in the project.
+## 1. Dataset Roles & Honest Scope
 
-In strict compliance with **Honesty Rule H3**, all datasets are categorized by their ground-truth traffic nature:
-- `real-testbed`: Captured from our live encrypted network namespace testbed.
-- `real-public`: External peer-reviewed or open-source scientific captures.
-- `semi-synthetic`: Resampled or parametric early-flow vectors (clearly labelled).
+| Dataset | Role | Protocol / Encryption | Key Facts & Warnings |
+|---------|------|-----------------------|----------------------|
+| **Own Testbed (Primary)** | Primary source for all headline inline IPS, LOFO zero-day, fast-path bypass, and drift guard results | Real TLS 1.2 / 1.3 (`mosquitto` 8883 MQTT-TLS, `https_server.py` 8443 HTTPS) | 12 IoT devices across 4 classes + `attacker` (`10.0.1.4`) + `srv` (`10.0.2.10`) |
+| **CESNET-TLS-Year22** | Offline real benign TLS for long-term benign drift, FPR-over-time, and large-sample EVT/conformal calibration | TLS (first 30 payload packets per flow; no pcaps, no attacks) | Backbone web TLS (not IoT); hashed client IPs (cannot test G2 cross-device consistency). Units of IPT must be verified against real file (`UNVERIFIED SCHEMA`). |
+| **TQH-C2 (Testbed D only)** | Offline held-out TLS C2 family (`TQH-C2_pcap_D_merlin_h2.zip`, ~1.8 GB) | Merlin C2 over HTTP/2-over-TLS | Beacon intervals `30s–3600s` with `0–70%` jitter. Do NOT use Testbed A (33.4 GB), B (QUIC), or C (plain HTTP with AES body, NOT TLS). |
+| **Aposemat IoT-23** | Offline cross-domain benign FPR test (B6) + optional malware captures | Mostly plaintext IoT | Benign captures are **ONLY** `CTU-Honeypot-Capture-4-1` (Hue), `CTU-Honeypot-Capture-5-1` (Echo), `CTU-Honeypot-Capture-7-1` (Somfy). **WARNING**: `CTU-IoT-Malware-Capture-7-1` is **MALICIOUS** (`Linux.Mirai`)! Also do NOT use the "small" 8.7 GB archive (Zeek logs only, no pcaps). |
+| **Kitsune** | Optional offline evaluation (`SSL Renegotiation` = TLS attack; `SSDP Flood` = UDP) | Mixed (1 TLS attack, 8 plaintext) | Packets in Kitsune pcaps are truncated to 200 bytes (`snaplen=200`); `ips/offline/pcap_to_flows.py` reads payload length from IP/TCP headers (`ip.len - ip.hl*4 - tcp.off*4`). |
 
----
-
-## Dataset Portfolio & Usage Matrix
-
-| Dataset | Nature | Size | Primary Usage | Prohibited Usage (DO NOT USE FOR) |
-|---|---|---|---|---|
-| **real-testbed** | Real TLS 1.2/1.3 | Variable (~100 MB–1 GB) | Closed-loop inline IPS evaluation, leakage measurement, drift scenarios. | Do not claim "physical hardware" until Pi deployment. |
-| **TQH-C2 (2026)** | Real TLS C2 | 379 MB (Testbed C), 1.8 GB (Testbed D) | Held-out "zero-day" TLS C2 evaluation (Sliver, Merlin, Mythic). | Do not use for training or threshold calibration. |
-| **CESNET-TLS-Year22** | Real backbone TLS | Parquet (~500 MB sample) | Long-term natural benign drift and EVT calibration curves. | Cannot replay through XDP (no pcaps; feature vectors only). |
-| **Kitsune (UCI 516)** | Real mixed traffic | 17.7 GB total (use SSL sub-pcap) | SSL Renegotiation attack (TLS) & SSDP Flood (UDP). | Note: 200B truncation; do not use for DPI claims. |
-| **IoT-23 (Stratosphere)** | Real IoT malware | ~21 GB | Non-TLS plaintext attacks (Mirai, DoS, port scans). | **NEVER** cite as "encrypted attack" data. |
-| **ISCX-VPN2016** | Real OpenVPN/TLS | ~28 GB | Hard benign negatives under encryption. | Contains no attacks; do not use for attack detection. |
-| **CIC-Darknet2020** | Encrypted Tor/VPN | ~15 GB | Hard benign negatives / traffic classification. | Traffic classification only, not intrusion detection. |
-
----
-
-## Automated Download Scripts
-All download scripts verify file size and prompt for user confirmation before initiating downloads:
-- `datasets/download_tqh_c2.sh`: Downloads TQH-C2 testbed archive from Zenodo.
-- `datasets/download_cesnet.sh`: Downloads a sampled week of CESNET-TLS-Year22 parquet data.
-- `datasets/download_kitsune.sh`: Downloads SSL Renegotiation and SSDP flood pcap slices.
-- `datasets/download_iot23.sh`: Downloads selected IoT-23 Mirai and benign captures.
-
----
-
-## Unified Feature Schema
-All adapters convert raw dataset flows into the unified early-flow schema defined in `ips/features.py`:
-- `early_n`: Number of payload-bearing packets ($N \in \{4, 6, 8, 12, 16, 24\}$).
-- `sizes`: Vector of $N$ TCP/UDP payload byte lengths (Ethernet/IP headers excluded).
-- `dirs`: Vector of $N$ directional flags ($0 = \text{client}\to\text{server}, 1 = \text{server}\to\text{client}$).
-- `iat_ms`: Inter-packet arrival times between consecutive payload packets (ms).
-- Metadata: `{source, label_family, is_attack, encrypted, session_id, split_hint}`.
-
+> **Rule B5**: All public datasets are **OFFLINE-only**. Do not replay public pcaps through the gateway.
