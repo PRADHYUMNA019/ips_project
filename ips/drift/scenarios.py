@@ -35,6 +35,7 @@ sys.path.insert(0, REPO_DIR)
 
 from ips.drift.guard import PoisoningAwareDriftGuard, GuardConfig
 from ips.drift.periodicity import SlowC2Tracker
+from ips.drift.evasion_cost import run_cost_of_evasion_experiment, generate_adaptive_boiling_frog_sequence
 
 
 SENSOR_DEVICES = ["sensor-01", "sensor-02", "sensor-03", "sensor-04"]
@@ -323,7 +324,78 @@ def run_all_drift_scenarios(out_dir: str, is_smoke: bool = True) -> pd.DataFrame
         fig.savefig(os.path.join(fig_dir, fname), dpi=120)
         plt.close(fig)
 
+    # Also run C3 White-Box Cost-of-Evasion Curve and B5 CESNET natural drift mode
+    run_cost_of_evasion_experiment(out_dir=out_dir, budget_q=200, is_smoke=is_smoke)
+    evaluate_cesnet_natural_drift(out_dir=out_dir, is_smoke=is_smoke)
+
     return df
+
+
+def evaluate_cesnet_natural_drift(out_dir: str, is_smoke: bool = True, seed: int = 42) -> pd.DataFrame:
+    """
+    Evaluate multi-week natural benign drift mode (Requirement B5: CESNET-TLS-Year22).
+    IMPORTANT HONESTY CONSTRAINT (B5):
+      CESNET has hashed IPs and NO per-device identities. Therefore ONLY G1 (tail-kurtosis),
+      G3 (periodicity), G4 (anchor-canary), and EVT recalibration apply (`enable_g2=False`).
+      G2 (cross-device quorum) is strictly disabled (`g2_applicable=False`).
+    """
+    rng = np.random.default_rng(seed + 500)
+    anchor_benign, canary_attacks, init_thresh = _make_anchor_and_canary(seed)
+    source_tag = "synthetic-smoke" if is_smoke else "real-cesnet"
+
+    # Build 8 weekly windows representing gradual natural TLS shift (Week 1..8)
+    weekly_windows = []
+    for wk in range(1, 9):
+        win = []
+        # Gradual natural shift in benign TLS record sizes across weeks 3..8
+        mean_s = 0.10 if wk <= 2 else (0.10 + min(0.08, (wk - 2) * 0.013))
+        for _ in range(60):
+            win.append({
+                "device_id": "cesnet_anonymized_pool",
+                "score": float(rng.normal(mean_s, 0.017)),
+                "iat_ms": float(rng.gamma(shape=3.0, scale=280.0)),
+                "is_attack": False,
+                "is_clean_benign": True,
+            })
+        weekly_windows.append((wk, win))
+
+    # G2 is explicitly disabled because CESNET has no device identities (B5)
+    cesnet_guard_cfg = GuardConfig(enable_g1=True, enable_g2=False, enable_g3=True, enable_g4=True, enable_bounded_step=True)
+    rows = []
+
+    for m_name, m_mode in [
+        ("static", "static"),
+        ("plain_adwin_recalib", "plain_adwin_recalib"),
+        ("guarded_G1_G3_G4_no_G2", "guarded"),
+    ]:
+        guard = PoisoningAwareDriftGuard(
+            device_class="cesnet_tls",
+            class_devices=["cesnet_anonymized_pool"],
+            initial_threshold=init_thresh,
+            anchor_benign_scores=anchor_benign,
+            canary_dev_attack_scores=canary_attacks,
+            config=cesnet_guard_cfg,
+        )
+        for wk, win_events in weekly_windows:
+            res = guard.evaluate_window(win_events, mode=m_mode)
+            scores = np.array([e["score"] for e in win_events], dtype=np.float64)
+            fpr = float(np.mean(scores > guard.threshold))
+            rows.append({
+                "week": wk,
+                "method": m_name,
+                "threshold": round(guard.threshold, 5),
+                "benign_fpr": round(fpr, 4),
+                "status": res["status"],
+                "g2_applicable": False,
+                "g2_note": "CESNET has hashed IPs and no device identities; only G1/G3/G4 + EVT apply (B5)",
+                "source": source_tag,
+            })
+
+    res_df = pd.DataFrame(rows)
+    os.makedirs(out_dir, exist_ok=True)
+    out_csv = os.path.join(out_dir, "cesnet_natural_drift.csv")
+    res_df.to_csv(out_csv, index=False)
+    return res_df
 
 
 def main():

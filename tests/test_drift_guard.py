@@ -96,3 +96,31 @@ def test_s1_benign_drift_and_s3_boiling_frog_and_s4_coordinated(tmp_path):
     s4_guarded = df[(df["scenario"] == "S4_coordinated_multi_device_poisoning") & (df["method"] == "guarded")].iloc[0]
     assert s4_guarded["post_drift_attack_tpr"] > s4_no_g4["post_drift_attack_tpr"]
 
+    # C3 & B5: Verify evasion_cost_curve.csv and cesnet_natural_drift.csv were generated
+    assert (tmp_path / "evasion_cost_curve.csv").exists()
+    assert (tmp_path / "figures" / "evasion_cost_curve.png").exists()
+    assert (tmp_path / "cesnet_natural_drift.csv").exists()
+
+
+def test_cost_of_evasion_and_cesnet_drift_c3_b5(tmp_path):
+    """C3 & B5: Verify adaptive-attacker cost-of-evasion curve and CESNET natural drift (no G2)."""
+    from ips.drift.evasion_cost import (
+        run_cost_of_evasion_experiment,
+        generate_adaptive_boiling_frog_sequence,
+    )
+    from ips.drift.scenarios import evaluate_cesnet_natural_drift
+
+    ev_df = run_cost_of_evasion_experiment(out_dir=str(tmp_path), budget_q=40, is_smoke=True)
+    assert len(ev_df) == 12
+    # Full defense (Progressive + Tier-2 + Guard) must achieve >= detection rate of Single-Window N=12
+    assert (ev_df["det_progressive_plus_tier2_guard"] >= ev_df["det_single_n12"]).all()
+
+    bf_seq = generate_adaptive_boiling_frog_sequence(n_steps=6)
+    assert len(bf_seq) == 6
+    assert bf_seq[-1]["target_goodput_kbps"] > bf_seq[0]["target_goodput_kbps"]
+
+    ces_df = evaluate_cesnet_natural_drift(out_dir=str(tmp_path), is_smoke=True)
+    assert len(ces_df) == 24  # 8 weeks * 3 methods
+    assert (ces_df["g2_applicable"] == False).all()
+
+
