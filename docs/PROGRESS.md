@@ -18,8 +18,8 @@
 | 4 | Labelled TLS testbed captures with manifest, services, attacks A1–A5 | WP3 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_manifest.py` (1 passed); services (HTTPS/MQTT), attacks A1–A5, `run_experiment.sh`, `collect.sh`; V2: `NOT RUN (Linux required)` |
 | 5 | Shared feature implementation (`ips/features.py`), shortcut guard | WP4 | ✅ DONE (V1) | V1: `pytest tests/test_features.py` (4 passed); dimension 3N+8 verified, shortcut guard enforced, golden pcap fixture matches; `ips/offline/pcap_to_flows.py` |
 | 6 | Offline detection (IF/AE/Kitsune-style), EVT calibration, INT8 quantization | WP5 | PARTIAL (V1 DONE, V3 needs real data) | V1: `pytest tests/test_models.py` (7 passed); AE/Kitsune-style/IF/per-class trained & quantized (FP32/INT8) on smoke data; EVT GPD POT + KS fit & Clopper-Pearson curve verified; V3: `NOT RUN (needs real data)` |
-| 7 | Kernel v2 (`ebpf/ips_engine.c`), verdict cache, LRU state, tier-0 guard | WP6 | In Progress | |
-| 8 | Closed loop v2 (`ips/engine`), watchdog, measurement harness | WP7 | Pending | |
+| 7 | Kernel v2 (`ebpf/ips_engine.c`), verdict cache, LRU state, tier-0 guard | WP6 | PARTIAL (V1 DONE, V2 code written) | V1: `pytest tests/test_schema_and_equivalence.py` (5 passed); `ips/engine/schema.py`, `ebpf/ips_engine.c`, `ips/eval/equivalence.py`, `scripts/xdp_selftest.sh`, `scripts/equivalence_test.sh`; V2: `NOT RUN (Linux required)` |
+| 8 | Closed loop v2 (`ips/engine`), watchdog, measurement harness | WP7 | In Progress | |
 | 9 | Drift guard (ADWIN, G1–G4 checks, scenarios S1–S5) | WP8 | Pending | |
 | 10 | `make reproduce`, `docs/RESULTS.md`, final consolidation | WP9 | Pending | |
 

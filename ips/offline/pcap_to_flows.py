@@ -27,14 +27,19 @@ except ImportError:
     dpkt = None
 
 
+def ip_to_u32(ip_str: str) -> int:
+    """Convert dotted-quad IPv4 string to host-order uint32 (big-endian numeric value)."""
+    return int.from_bytes(socket.inet_aton(ip_str), "big")
+
+
 def canonical_flow_key(src_ip: str, sport: int, dst_ip: str, dport: int, proto: str):
-    """Derive canonical bidirectional 5-tuple flow key."""
-    ep1 = (src_ip, sport)
-    ep2 = (dst_ip, dport)
+    """Derive canonical bidirectional 5-tuple flow key ordered by numeric (IP, port)."""
+    ep1 = (ip_to_u32(src_ip), int(sport))
+    ep2 = (ip_to_u32(dst_ip), int(dport))
     if ep1 <= ep2:
-        return (src_ip, sport, dst_ip, dport, proto)
+        return (src_ip, int(sport), dst_ip, int(dport), str(proto).upper())
     else:
-        return (dst_ip, dport, src_ip, sport, proto)
+        return (dst_ip, int(dport), src_ip, int(sport), str(proto).upper())
 
 
 def extract_flows_from_pcap(filepath: str, early_n: int = 12, lan_prefix: str = "10.0.1."):
