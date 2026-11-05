@@ -64,3 +64,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_a1_flood(args.target, args.port, args.duration, args.manifest, args.run_id)
+

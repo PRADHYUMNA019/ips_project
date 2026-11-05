@@ -63,3 +63,4 @@ def test_manifest_writer_and_reader():
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+

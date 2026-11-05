@@ -18,10 +18,15 @@ results/figures/
 results/equivalence/
 results/system/
 results/offline/
+results/smoke/
+results/verify/
 
-# Models (large binaries)
+# Models (large binaries and runtime-generated cards)
 models/*.onnx
+models/*.onnx.data
+models/*.pkl
 models/*.tflite
+models/model_card.json
 ml/data/
 ml/models/*.onnx
 ml/models/*.tflite

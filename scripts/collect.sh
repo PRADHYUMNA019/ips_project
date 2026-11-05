@@ -75,3 +75,4 @@ sudo kill -9 "$SERVER_PID" 2>/dev/null || true
 sudo "$REPO_DIR/scripts/topology.sh" teardown
 
 echo "[OK] Collection complete for split '$SPLIT'. Raw pcaps in $OUT_DIR"
+

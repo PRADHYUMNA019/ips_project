@@ -47,3 +47,4 @@
   - *Reference*: Kloft and Laskov, "Online Anomaly Detection under Adversarial Impact", AISTATS / JMLR.
   - *Status*: `UNVERIFIED — human must check`
   - *Relevance*: Mathematical foundation of "boiling-frog" attacks against online adaptive learning algorithms.
+

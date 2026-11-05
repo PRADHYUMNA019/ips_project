@@ -27,3 +27,4 @@ echo "[Kitsune] Downloading SSL Renegotiation dataset..."
 # Uses UCI download endpoint
 curl -L -o "$DEST_DIR/ssl_renegotiation.pcap.gz" "https://archive.ics.uci.edu/static/public/516/SSL_Renegotiation_pcap.pcap.gz" || true
 echo "[OK] Kitsune download script completed."
+

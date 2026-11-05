@@ -72,3 +72,4 @@ def load_and_adapt_cesnet(filepath, early_n=12, limit=None):
 
     records = [adapt_cesnet_record(row, early_n=early_n) for _, row in df.iterrows()]
     return pd.DataFrame(records)
+

@@ -8,3 +8,4 @@
 *.md text eol=lf
 Makefile text eol=lf
 pytest.ini text eol=lf
+

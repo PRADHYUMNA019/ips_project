@@ -101,3 +101,4 @@ sudo kill -9 "$SRV_PID" "$HTTPS_PID" 2>/dev/null || true
 sudo "$REPO_DIR/scripts/topology.sh" teardown >/dev/null 2>&1 || true
 
 echo "[OK] Experiment $RUN_ID completed. Outputs stored in $OUT_DIR"
+

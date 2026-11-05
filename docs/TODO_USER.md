@@ -58,3 +58,4 @@ sudo bash scripts/collect.sh test_benign 3000
 ## 4. Hardware Gateway Validation (Post-60% Roadmap)
 - Flash OpenWrt or Raspberry Pi OS onto a Raspberry Pi 4 / 5.
 - Deploy `ebpf/ips_engine.c` and measure true hardware NIC native XDP performance.
+

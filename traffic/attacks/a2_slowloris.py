@@ -88,3 +88,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_a2_slowloris(args.target, args.port, args.conns, args.duration, args.manifest, args.run_id)
+

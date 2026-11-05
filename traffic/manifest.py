@@ -69,3 +69,4 @@ class ManifestWriter:
                 except Exception:
                     continue
         return records
+

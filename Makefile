@@ -48,11 +48,14 @@ features:
 	@echo "Extracting features from pcaps..."
 	python -c "import os, glob; [os.system(f'python ips/offline/pcap_to_flows.py {p} --out {p}.csv') for p in glob.glob('results/**/*.pcap', recursive=True)]"
 
+DATA ?= results/smoke/smoke_train_sess.csv
+TEST_DATA ?= results/smoke/smoke_quick_test.csv
+
 train:
-	@echo "WP5: not yet implemented"
+	python ips/models/train.py --data $(DATA)
 
 eval-offline:
-	@echo "WP5: not yet implemented"
+	python ips/models/eval_offline.py --test-data $(TEST_DATA) --card models/model_card.json
 
 eval-system:
 	@echo "WP7: not yet implemented"

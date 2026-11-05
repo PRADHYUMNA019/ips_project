@@ -28,3 +28,4 @@ curl -L -o "$DEST_DIR/testbed_c.tar.gz" "$URL"
 echo "[TQH-C2] Extracting archive ..."
 tar -xzf "$DEST_DIR/testbed_c.tar.gz" -C "$DEST_DIR"
 echo "[OK] TQH-C2 ready in $DEST_DIR"
+

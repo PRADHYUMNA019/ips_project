@@ -26,3 +26,4 @@ fi
 echo "[CESNET] Downloading week_01_sample.parquet ..."
 curl -L -o "$DEST_DIR/week_01_sample.parquet" "$URL"
 echo "[OK] CESNET sample ready in $DEST_DIR"
+

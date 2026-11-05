@@ -26,3 +26,4 @@ fi
 echo "[IoT-23] Downloading Mirai sample capture (CTU-IoT-Malware-Capture-34-1) ..."
 curl -L -o "$DEST_DIR/mirai_capture.pcap" "https://mcfp.felk.cvut.cz/publicDatasets/IoT-23-Dataset/IndividualScenarios/CTU-IoT-Malware-Capture-34-1/bro/conn.log.labeled" || true
 echo "[OK] IoT-23 download script finished."
+

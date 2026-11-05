@@ -43,3 +43,4 @@ This document records architectural, experimental, and empirical limitations of 
   - If an adversary compromises $\ge 60\%$ of the devices within a specific class simultaneously, Guard G2 will be satisfied and coordinated poisoning can succeed. This is reported honestly as an inherent threshold limit.
 - **Small Device Fleets**:
   - Device classes with fewer than 3 devices cannot reliably compute cross-device quorum ($\rho \times K \ge 2$). For these classes, automated adaptation is disabled and alerts require operator confirmation.
+

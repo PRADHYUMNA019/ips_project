@@ -112,3 +112,4 @@ def test_kitsune_adapter_schema():
     assert res["label_family"] == "A1_ssl_reneg"
     assert res["is_attack"] == 1
     assert res["split_hint"] == "test-zeroday"
+

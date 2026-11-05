@@ -99,3 +99,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_a5_bruteforce(args.target, args.port, args.attempts, args.duration, args.manifest, args.run_id)
+

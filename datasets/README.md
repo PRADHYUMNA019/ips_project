@@ -39,3 +39,4 @@ All adapters convert raw dataset flows into the unified early-flow schema define
 - `dirs`: Vector of $N$ directional flags ($0 = \text{client}\to\text{server}, 1 = \text{server}\to\text{client}$).
 - `iat_ms`: Inter-packet arrival times between consecutive payload packets (ms).
 - Metadata: `{source, label_family, is_attack, encrypted, session_id, split_hint}`.
+

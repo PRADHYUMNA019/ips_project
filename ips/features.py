@@ -128,3 +128,4 @@ def assert_no_forbidden_features(feature_names: List[str]):
     inter = lower_names.intersection(FORBIDDEN_COLUMNS)
     if inter:
         raise ValueError(f"CRITICAL SHORTCUT LEARNING VIOLATION: Forbidden features found: {inter}")
+
