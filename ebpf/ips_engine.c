@@ -480,6 +480,7 @@ int xdp_ips_prog(struct xdp_md *ctx) {
 
         events.ringbuf_submit(ev, 0);
         if (st) st->events_emitted++;
+        rec->emitted_mask |= (__u8)(1U << ckpt_hit);
     }
 
     return XDP_PASS;

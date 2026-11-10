@@ -10,6 +10,7 @@ Implements:
 import os
 from typing import List, Tuple, Dict, Any
 import numpy as np
+from ips.features import build_valid_mask_matrix
 
 # PyTorch will be imported dynamically when available or at module level
 try:
@@ -54,7 +55,7 @@ class EarlyFlowAutoencoder(nn.Module if nn else object):
         return out
 
     def get_reconstruction_error(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Compute sample MSE and per-feature squared errors.
+        """Compute masked sample MSE and per-feature squared errors over positions < valid_len (C1).
 
         Args:
             x: 2D numpy array of shape (batch_size, input_dim)
@@ -64,11 +65,14 @@ class EarlyFlowAutoencoder(nn.Module if nn else object):
             feat_errors: 2D array of shape (batch_size, input_dim)
         """
         self.eval()
+        mask = build_valid_mask_matrix(x)
+        x_masked = x.astype(np.float32) * mask
         with torch.no_grad():
-            t_x = torch.from_numpy(x.astype(np.float32))
+            t_x = torch.from_numpy(x_masked)
             t_out = self.forward(t_x)
-            sq_err = (t_x - t_out).pow(2).numpy()
-            sample_mse = sq_err.mean(axis=1)
+            sq_err = ((t_x - t_out).pow(2).numpy()) * mask
+            denom = np.maximum(1.0, mask.sum(axis=1))
+            sample_mse = (sq_err.sum(axis=1) / denom).astype(np.float32)
         return sample_mse, sq_err
 
 

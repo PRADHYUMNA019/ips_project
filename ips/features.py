@@ -190,4 +190,41 @@ def recompute_early_matrix_for_k(df, k: int) -> np.ndarray:
     return np.array(rows, dtype=np.float32) if rows else np.zeros((0, 3 * k + 8), dtype=np.float32)
 
 
+def build_valid_mask_matrix(x: np.ndarray) -> np.ndarray:
+    """
+    Build a binary feature mask (1.0 for active features < valid_len, 0.0 for padded features >= valid_len)
+    for a 1D (3N+8,) or 2D (B, 3N+8) early-flow feature array (Prompt 6 §7 / C1).
+    """
+    arr = np.asarray(x, dtype=np.float32)
+    is_1d = arr.ndim == 1
+    if is_1d:
+        arr = arr.reshape(1, -1)
+
+    b, d = arr.shape
+    if (d - 8) <= 0 or (d - 8) % 3 != 0:
+        return np.ones_like(x, dtype=np.float32)
+
+    early_n = (d - 8) // 3
+    norm_vlens = arr[:, -1]
+    # If last column is not a valid normalized length ratio in (0, 1], return all-ones mask
+    if np.any(norm_vlens <= 0.0) or np.any(norm_vlens > 1.0001):
+        return np.ones_like(x, dtype=np.float32)
+
+    mask = np.ones((b, d), dtype=np.float32)
+    for idx in range(b):
+        vlen = int(round(float(norm_vlens[idx]) * early_n))
+        vlen = max(1, min(early_n, vlen))
+        if vlen < early_n:
+            # Mask out padded sizes: vlen .. early_n - 1
+            mask[idx, vlen:early_n] = 0.0
+            # Mask out padded dirs: early_n + vlen .. 2*early_n - 1
+            mask[idx, early_n + vlen : 2 * early_n] = 0.0
+            # Mask out padded log_iats: 2*early_n + max(0, vlen-1) .. 3*early_n - 2
+            valid_iats = max(0, vlen - 1)
+            mask[idx, 2 * early_n + valid_iats : 3 * early_n - 1] = 0.0
+
+    return mask[0] if is_1d else mask
+
+
+
 

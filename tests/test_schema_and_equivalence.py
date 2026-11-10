@@ -148,6 +148,48 @@ def test_checkpoint_retry_and_shed_counters_a2():
     assert backend.flow_state[fk]["emitted_mask"] == 3
 
 
+def test_40_packet_flow_exact_3_checkpoints_no_event_storm_1c():
+    """
+    1c (V1 model of C control flow): Feed 40 payload packets to one flow and assert
+    exactly 3 events (checkpoints 4, 8, 16), zero event storm after N=16, and verify
+    that a ring-buffer-full period delays but does not duplicate or lose events.
+    """
+    from ips.engine.engine import MockBPFBackend
+
+    backend = MockBPFBackend(early_n=16, checkpoints=[4, 8, 16])
+    t0 = 1_000_000_000
+
+    # Part 1: Normal 40-packet flow -> must emit at pkt 4, 8, 16 ONLY (total 3 events)
+    emitted_normal = []
+    for pkt_num in range(1, 41):
+        _, ev = backend.simulate_packet(
+            "10.0.1.14", 51001, "10.0.2.10", 8443, "TCP", 120, pkt_num % 2, t0 + pkt_num * 10_000_000
+        )
+        if ev is not None:
+            emitted_normal.append((pkt_num, ev["checkpoint_idx"], ev["valid_len"]))
+
+    assert len(emitted_normal) == 3, f"Expected exactly 3 events over 40 packets, got {len(emitted_normal)}: {emitted_normal}"
+    assert [x[0] for x in emitted_normal] == [4, 8, 16]
+    assert [x[1] for x in emitted_normal] == [0, 1, 2]
+    assert backend.stats["events_emitted"] == 3
+
+    # Part 2: 40-packet flow with ring-buffer-full periods during pkts 4..6 and 16..19
+    emitted_delayed = []
+    for pkt_num in range(1, 41):
+        backend.simulate_ringbuf_full = (4 <= pkt_num <= 6) or (16 <= pkt_num <= 19)
+        _, ev = backend.simulate_packet(
+            "10.0.1.15", 51002, "10.0.2.10", 8443, "TCP", 120, pkt_num % 2, t0 + pkt_num * 10_000_000
+        )
+        if ev is not None:
+            emitted_delayed.append((pkt_num, ev["checkpoint_idx"], ev["valid_len"]))
+
+    assert len(emitted_delayed) == 3, f"Expected 3 events after delayed recovery, got {len(emitted_delayed)}: {emitted_delayed}"
+    assert [x[1] for x in emitted_delayed] == [0, 1, 2], "All 3 checkpoints must be emitted in order without loss or duplication"
+    assert [x[0] for x in emitted_delayed] == [7, 8, 20], f"Expected delayed emission at pkts [7, 8, 20], got {[x[0] for x in emitted_delayed]}"
+    assert backend.stats["events_emitted"] == 6
+    assert backend.stats["ckpt_retry"] == 7  # 3 retries for ckpt 0 (pkts 4,5,6) + 4 retries for ckpt 2 (pkts 16,17,18,19)
+
+
 def test_flow_key_canonical_symmetry():
     """Verify FlowKey produces identical canonical key regardless of packet direction."""
     fk1 = make_flow_key("10.0.1.11", 50123, "10.0.2.10", 8443, "TCP")

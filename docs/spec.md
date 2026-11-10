@@ -1,4 +1,4 @@
-# System Specification: Drift-Resilient On-Device Inline IPS
+# System Specification: Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks
 
 > **Scope note (evaluation):** All measurements are obtained on an emulated resource-constrained gateway (Linux network namespaces on a laptop/VM; user-space engine limited by cgroups; XDP in generic mode, unconstrained). No physical embedded device was measured. Title wording is pending guide approval (TITLE_DECISION_PENDING).
 

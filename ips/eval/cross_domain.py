@@ -49,10 +49,30 @@ def evaluate_cross_domain_pair(
     source_tag: str = "synthetic-smoke",
     epochs: int = 15,
     seed: int = 42,
+    fit_hook: Any = None,
 ) -> Dict[str, Any]:
     """Train & calibrate strictly on source domain benign, then measure shift on target domain benign."""
     input_dim = x_source_train.shape[1]
     feat_names = get_feature_names(early_n)
+
+    # Guard against target-domain row leakage into source train or calibration
+    target_hashes = {np.asarray(r, dtype=np.float32).tobytes() for r in x_target_benign}
+    for split_name, split_arr in (("source_train", x_source_train), ("source_cal", x_source_cal)):
+        for r in split_arr:
+            if np.asarray(r, dtype=np.float32).tobytes() in target_hashes:
+                raise ValueError(
+                    f"CRITICAL CROSS-DOMAIN LEAKAGE: target domain row found in {split_name}!"
+                )
+
+    # Fit scaler statistics strictly on source TRAIN alone
+    if fit_hook is not None:
+        fit_hook("scaler_fit", x_source_train)
+    scaler_mean = np.mean(x_source_train, axis=0)
+    scaler_std = np.std(x_source_train, axis=0)
+
+    if fit_hook is not None:
+        fit_hook("model_fit", x_source_train)
+        fit_hook("hyperparam_selection_val", x_source_cal)
 
     model, _ = train_autoencoder(
         x_source_train,
@@ -66,6 +86,8 @@ def evaluate_cross_domain_pair(
     in_test_scores, in_sq_err = model.get_reconstruction_error(x_source_test)
     out_test_scores, out_sq_err = model.get_reconstruction_error(x_target_benign)
 
+    if fit_hook is not None:
+        fit_hook("threshold_calibration", x_source_cal)
     evt_res = fit_evt_threshold(cal_scores, target_fpr=target_fpr)
     tau = float(evt_res["threshold"])
 
@@ -105,6 +127,8 @@ def evaluate_cross_domain_pair(
         "ks_pvalue": float(ks_pval),
         "domain_shift_auroc": round(dom_auroc, 4),
         "top_3_shift_features": "; ".join(top_shift_features),
+        "scaler_mean": scaler_mean,
+        "scaler_std": scaler_std,
     }
 
 
@@ -175,7 +199,7 @@ def run_cross_domain_experiment(out_dir: str, early_n: int = 12, is_smoke: bool 
         )
     )
 
-    df_out = pd.DataFrame(rows)
+    df_out = pd.DataFrame(rows).drop(columns=["scaler_mean", "scaler_std"], errors="ignore")
     out_csv = os.path.join(out_dir, "cross_domain_eval.csv")
     df_out.to_csv(out_csv, index=False)
     print(f"[+] Wrote cross-domain evaluation table to {out_csv}")

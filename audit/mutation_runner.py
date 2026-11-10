@@ -223,39 +223,40 @@ def run_tests_in_dir(work_dir: Path, test_targets: List[str]) -> Tuple[int, str]
 def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     print("=== Running Adversarial Mutation Testing Suite ===", flush=True)
     results = []
+    invalid_or_failed = False
 
-    for m in MUTATIONS:
+    # 0. Global baseline run (no mutation) across all unique test targets at the start
+    selected_mutations = [m for m in MUTATIONS if not only_ids or m["id"] in only_ids]
+    all_test_targets = sorted(list({t for m in selected_mutations for t in m["tests"]}))
+    print(f"\n--- Step 0: Running Global Baseline Suite ({len(all_test_targets)} targets, no mutation) ---", flush=True)
+    base_tmp = Path(tempfile.mkdtemp(prefix="audit_mut_baseline_"))
+    try:
+        copy_clean_repo(base_tmp)
+        g_rc, g_out = run_tests_in_dir(base_tmp, all_test_targets)
+        g_last = g_out.splitlines()[-1] if g_out else ""
+        if g_rc != 0:
+            print(f"  [GLOBAL BASELINE FAILED] rc={g_rc} ({g_last})", flush=True)
+            sys.exit(1)
+        print(f"  [GLOBAL BASELINE PASSED] ({g_last})", flush=True)
+    finally:
+        shutil.rmtree(base_tmp, ignore_errors=True)
+
+    for m in selected_mutations:
         m_id = m["id"]
-        if only_ids and m_id not in only_ids:
-            continue
-
         print(f"\n--- Running Mutation {m_id}: {m['desc']} ---", flush=True)
         tmp_dir = Path(tempfile.mkdtemp(prefix=f"audit_mut_{m_id}_"))
         try:
             copy_clean_repo(tmp_dir)
 
-            # 1. Baseline test run
-            base_rc, base_out = run_tests_in_dir(tmp_dir, m["tests"])
-            if base_rc != 0:
-                print(f"  [BASELINE FAILS] rc={base_rc}", flush=True)
-                results.append({
-                    "id": m_id,
-                    "desc": m["desc"],
-                    "status": "BASELINE FAILS",
-                    "file": m["file"],
-                    "output": base_out.splitlines()[-1] if base_out else "",
-                    "should_catch": m["should_catch"],
-                })
-                continue
-
-            # 2. Apply mutation
             target_file = tmp_dir / m["file"]
             if not target_file.exists():
-                print(f"  [FILE MISSING] {m['file']}", flush=True)
+                print(f"  [INVALID] File missing: {m['file']}", flush=True)
+                invalid_or_failed = True
                 results.append({
                     "id": m_id,
                     "desc": m["desc"],
-                    "status": "NOT APPLICABLE (file missing)",
+                    "target_found": "no",
+                    "status": "INVALID (file missing)",
                     "file": m["file"],
                     "output": "",
                     "should_catch": m["should_catch"],
@@ -263,20 +264,43 @@ def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, A
                 continue
 
             content = target_file.read_text(encoding="utf-8")
-            if m["target"] not in content:
-                print(f"  [TARGET NOT FOUND] in {m['file']}", flush=True)
+            occ = content.count(m["target"])
+            if occ != 1:
+                print(f"  [INVALID] Target occurred {occ} times (expected exactly 1) in {m['file']}", flush=True)
+                invalid_or_failed = True
                 results.append({
                     "id": m_id,
                     "desc": m["desc"],
-                    "status": "NOT APPLICABLE (target not found)",
+                    "target_found": "no",
+                    "status": "INVALID (target not found)" if occ == 0 else f"INVALID (target matched {occ}x)",
                     "file": m["file"],
                     "output": "",
                     "should_catch": m["should_catch"],
                 })
                 continue
 
+            # 1. Baseline test run for this mutant's specific test targets
+            base_rc, base_out = run_tests_in_dir(tmp_dir, m["tests"])
+            if base_rc != 0:
+                print(f"  [BASELINE FAILS] rc={base_rc}", flush=True)
+                invalid_or_failed = True
+                results.append({
+                    "id": m_id,
+                    "desc": m["desc"],
+                    "target_found": "yes",
+                    "status": "BASELINE FAILS",
+                    "file": m["file"],
+                    "output": base_out.splitlines()[-1] if base_out else "",
+                    "should_catch": m["should_catch"],
+                })
+                continue
+
+            # 2. Apply mutation and assert file content actually changed
             mutated_content = content.replace(m["target"], m["replacement"], 1)
+            assert mutated_content != content, f"Mutation {m_id} did not change content of {m['file']}!"
             target_file.write_text(mutated_content, encoding="utf-8")
+            re_read = target_file.read_text(encoding="utf-8")
+            assert re_read != content, f"On-disk content of {m['file']} did not change after applying {m_id}!"
 
             # 3. Run tests with mutation
             mut_rc, mut_out = run_tests_in_dir(tmp_dir, m["tests"])
@@ -286,6 +310,7 @@ def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, A
                 results.append({
                     "id": m_id,
                     "desc": m["desc"],
+                    "target_found": "yes",
                     "status": "KILLED",
                     "file": m["file"],
                     "output": last_line,
@@ -293,9 +318,11 @@ def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, A
                 })
             else:
                 print(f"  [SURVIVED] Tests passed despite mutation! (WEAK TEST DETECTED)", flush=True)
+                invalid_or_failed = True
                 results.append({
                     "id": m_id,
                     "desc": m["desc"],
+                    "target_found": "yes",
                     "status": "SURVIVED",
                     "file": m["file"],
                     "output": last_line,
@@ -309,26 +336,29 @@ def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, A
     killed = sum(1 for r in results if r["status"] == "KILLED")
     survived = sum(1 for r in results if r["status"] == "SURVIVED")
     base_fails = sum(1 for r in results if r["status"] == "BASELINE FAILS")
-    na = sum(1 for r in results if r["status"].startswith("NOT APPLICABLE"))
-    print(f"Total: {len(results)} | KILLED: {killed} | SURVIVED: {survived} | BASELINE FAILS: {base_fails} | N/A: {na}", flush=True)
+    invalid = sum(1 for r in results if r["status"].startswith("INVALID"))
+    print(f"Total: {len(results)} | KILLED: {killed} | SURVIVED: {survived} | BASELINE FAILS: {base_fails} | INVALID: {invalid}", flush=True)
 
     # Generate markdown table
     md_lines = [
         "# Mutation Testing Audit Results (`audit/mutation_results.md`)\n",
-        f"**Summary**: Total: {len(results)} | **KILLED**: {killed} | **SURVIVED**: {survived} | **BASELINE FAILS**: {base_fails} | **N/A**: {na}\n",
-        "| ID | File | Description | Result | Output / Failure Line | Test that Should Catch |",
-        "|---|---|---|---|---|---|",
+        f"**Summary**: Total: {len(results)} | **KILLED**: {killed} | **SURVIVED**: {survived} | **BASELINE FAILS**: {base_fails} | **INVALID**: {invalid}\n",
+        "> **Historical Honesty Note (Prompt 6 §6)**: In commit `54b5f81` (Prompt 4 audit), **8 of the 17 mutants** (`M6, M7, M8, M9, M10, M10b, M15, M16`) had target strings that did not match the source files and were therefore invalid until `audit/mutation_runner.py` was updated with exact single-occurrence assertions and disk-diff verification.\n",
+        "| ID | File | Description | target found: yes/no | Result | Output / Failure Line | Test that Should Catch |",
+        "|---|---|---|---|---|---|---|",
     ]
     for r in results:
-        status_md = f"**{r['status']}**" if r["status"] == "SURVIVED" else r["status"]
+        status_md = f"**{r['status']}**" if r["status"] != "KILLED" else r["status"]
         md_lines.append(
-            f"| {r['id']} | `{r['file']}` | {r['desc']} | {status_md} | `{r['output']}` | `{r['should_catch']}` |"
+            f"| {r['id']} | `{r['file']}` | {r['desc']} | {r['target_found']} | {status_md} | `{r['output']}` | `{r['should_catch']}` |"
         )
     md_lines.append("")
 
     out_md = REPO_ROOT / "audit" / "mutation_results.md"
     out_md.write_text("\n".join(md_lines), encoding="utf-8")
     print(f"Report written to: {out_md}", flush=True)
+    if invalid_or_failed:
+        sys.exit(1)
     return results
 
 

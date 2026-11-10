@@ -29,7 +29,7 @@ import yaml
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
 
-from ips.features import build_early_vector, get_feature_names
+from ips.features import build_early_vector, get_feature_names, build_valid_mask_matrix
 from ips.models.autoencoder import explain_anomaly
 from ips.engine.schema import (
     SCHEMA_VERSION,
@@ -180,11 +180,21 @@ class MockBPFBackend:
             rec["last_ts_ns"] = now_ns
 
         cur_vlen = len(rec["sizes"])
+        ckpt_0 = self.checkpoints[0]
+        ckpt_1 = self.checkpoints[1] if len(self.checkpoints) >= 2 else self.early_n
+        ckpt_2 = self.checkpoints[2] if len(self.checkpoints) >= 3 else self.early_n
+        num_ckpts = len(self.checkpoints)
+
+        # Mirror ebpf/ips_engine.c lines 419-484 line-by-line:
         ckpt_hit = -1
-        for idx, ckpt_val in enumerate(self.checkpoints):
-            if cur_vlen >= ckpt_val and not (rec["emitted_mask"] & (1 << idx)):
-                ckpt_hit = idx
-                break
+        if cur_vlen >= ckpt_0 and not (rec["emitted_mask"] & (1 << 0)):
+            ckpt_hit = 0
+        elif num_ckpts >= 2 and cur_vlen >= ckpt_1 and not (rec["emitted_mask"] & (1 << 1)):
+            ckpt_hit = 1
+        elif num_ckpts >= 3 and cur_vlen >= ckpt_2 and not (rec["emitted_mask"] & (1 << 2)):
+            ckpt_hit = 2
+        elif cur_vlen >= self.early_n and not (rec["emitted_mask"] & (1 << (num_ckpts - 1))):
+            ckpt_hit = num_ckpts - 1
 
         if ckpt_hit >= 0:
             if self.cfg["shed"] == 1:
@@ -195,14 +205,14 @@ class MockBPFBackend:
                 self.stats["ckpt_retry"] = self.stats.get("ckpt_retry", 0) + 1
                 return ("XDP_PASS", None)
 
-            rec["emitted_mask"] |= (1 << ckpt_hit)
-            self.stats["events_emitted"] += 1
             ev = dict(rec)
             ev["sizes"] = list(rec["sizes"])
             ev["dirs"] = list(rec["dirs"])
             ev["iat_ns"] = list(rec["iat_ns"])
             ev["valid_len"] = cur_vlen
             ev["checkpoint_idx"] = ckpt_hit
+            self.stats["events_emitted"] += 1
+            rec["emitted_mask"] |= (1 << ckpt_hit)
             return ("XDP_PASS", ev)
 
         return ("XDP_PASS", None)
@@ -415,12 +425,15 @@ class IPSEngine:
     def score_vector(self, vec: np.ndarray, ckpt_n: Optional[int] = None) -> Tuple[float, np.ndarray, float]:
         """
         Score a single normalized early-flow vector (1D float32 array of length 3N+8).
-        Uses the checkpoint-specific ONNX session when available, or deterministic fallback.
+        Uses the checkpoint-specific ONNX session when available, or deterministic fallback,
+        computing masked MSE strictly over positions < valid_len (C1).
         Returns (mse_score, recon_vector, inference_ms).
         """
         t0 = time.perf_counter()
         n_win = int(ckpt_n) if ckpt_n is not None else self.early_n
-        x = vec.reshape(1, -1).astype(np.float32)
+        mask = build_valid_mask_matrix(vec)
+        vec_masked = (vec.astype(np.float32) * mask)
+        x = vec_masked.reshape(1, -1).astype(np.float32)
 
         sess = self.ckpt_sessions.get(n_win, None)
         if sess is None and n_win == self.early_n and self.ort_session is not None and len(vec) == (3 * self.early_n + 8):
@@ -431,7 +444,7 @@ class IPSEngine:
             recon = sess.run(None, {inp_name: x})[0][0]
         else:
             # Deterministic fallback reconstruction when ONNX model file is not present
-            recon = np.copy(vec)
+            recon = np.copy(vec_masked)
             recon[:n_win] = 0.08
             recon[2 * n_win : 3 * n_win - 1] = 5.4
             agg_start = 3 * n_win - 1
@@ -439,8 +452,8 @@ class IPSEngine:
             recon[agg_start + 1] = 0.04   # bytes_down
             recon[agg_start + 5] = 0.77   # mean_log_iat / 7.0
             recon[agg_start + 7] = 0.08   # first_payload_size
-        sq_err = (vec - recon) ** 2
-        mse = float(np.mean(sq_err))
+        sq_err = ((vec_masked - recon) ** 2) * mask
+        mse = float(np.sum(sq_err) / max(1.0, float(np.sum(mask))))
         infer_ms = (time.perf_counter() - t0) * 1000.0
         return mse, recon, infer_ms
 

@@ -88,6 +88,51 @@ def scan_claims():
     return findings_forbidden, findings_keywords
 
 
+CANONICAL_TITLE = (
+    "Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic "
+    "in Resource-Constrained Smart Systems Against Zero-Day Attacks"
+)
+
+
+def check_title_consistency() -> list[str]:
+    """Verify README.md, docs/spec.md, and docs/PAPER_OUTLINE.md carry the identical canonical title."""
+    errors = []
+
+    readme_line1 = (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()[0].strip()
+    readme_title = readme_line1.removeprefix("# ").strip()
+
+    spec_line1 = (REPO_ROOT / "docs" / "spec.md").read_text(encoding="utf-8").splitlines()[0].strip()
+    spec_title = spec_line1.removeprefix("# System Specification:").removeprefix("#").strip()
+
+    outline_lines = (REPO_ROOT / "docs" / "PAPER_OUTLINE.md").read_text(encoding="utf-8").splitlines()
+    outline_title = ""
+    for ln in outline_lines:
+        if "**Working Title**:" in ln:
+            m = re.search(r"\*([^*]+)\*", ln.split("**Working Title**:", 1)[1])
+            if m:
+                outline_title = m.group(1).strip()
+            break
+
+    titles = {
+        "README.md": readme_title,
+        "docs/spec.md": spec_title,
+        "docs/PAPER_OUTLINE.md": outline_title,
+    }
+    print("\n3. Title Consistency Check (Rule R4):")
+    for loc, t in titles.items():
+        print(f"  [{loc}]: {t}")
+        if t != CANONICAL_TITLE:
+            errors.append(f"{loc} title '{t}' != canonical '{CANONICAL_TITLE}'")
+
+    if len(set(titles.values())) > 1:
+        errors.append("Titles differ across README.md, docs/spec.md, and docs/PAPER_OUTLINE.md!")
+
+    for err in errors:
+        print(f"  [TITLE MISMATCH] {err}")
+    return errors
+
+
 if __name__ == "__main__":
     forbidden, keywords = scan_claims()
-    sys.exit(1 if forbidden else 0)
+    title_errors = check_title_consistency()
+    sys.exit(1 if (forbidden or title_errors) else 0)

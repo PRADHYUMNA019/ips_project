@@ -1,93 +1,105 @@
 #!/usr/bin/env python3
-"""tests/test_cross_eval.py - Cross-domain evaluation data leakage guards (B7)."""
-
-import pytest
-import pandas as pd
+"""
+tests/test_cross_eval.py — Cross-domain evaluation leakage guards for IoT-23 Benign and TQH-C2 (B7).
+"""
 import numpy as np
+import pytest
+import ips.eval.cross_domain as cd
+from ips.eval.cross_domain import evaluate_cross_domain_pair
 
 
-def assert_no_cross_domain_leakage(train_df: pd.DataFrame, eval_df: pd.DataFrame, dataset_name: str = "TON_IOT"):
+def test_iot23_tqh_c2_cross_domain_train_eval_isolation(monkeypatch):
     """
-    Sentinel guard: strictly assert that zero flow keys, indices, or session IDs
-    from the training domain bleed into the target evaluation domain (B7).
+    B7: Import the real cross-domain entry point from ips/eval/cross_domain.py,
+    provide a source training/calibration set and a target set (synthetic stand-in
+    for IoT-23 Benign / TQH-C2) with a sentinel wrapper that raises if any target
+    row reaches model fit, scaler fit, threshold calibration, or hyperparameter
+    selection, and assert that scaler statistics equal those computed on TRAIN alone.
     """
-    # 1. Check index intersection
-    index_overlap = set(train_df.index).intersection(set(eval_df.index))
-    if index_overlap:
-        raise ValueError(f"CRITICAL CROSS-DOMAIN LEAKAGE [{dataset_name}]: {len(index_overlap)} row indices overlap!")
+    rng = np.random.default_rng(101)
+    early_n = 8
+    dim = 3 * early_n + 8  # 32 features
 
-    # 2. Check flow_id / flow_key intersection if present
-    for key_col in ["flow_id", "flow_key"]:
-        if key_col in train_df.columns and key_col in eval_df.columns:
-            key_overlap = set(train_df[key_col]).intersection(set(eval_df[key_col]))
-            if key_overlap:
-                raise ValueError(
-                    f"CRITICAL CROSS-DOMAIN LEAKAGE [{dataset_name}]: {len(key_overlap)} {key_col} values overlap between train and eval!"
-                )
+    # Source domain (Own Testbed Benign): centered around 0.20
+    x_source_train = rng.normal(0.20, 0.04, size=(120, dim)).astype(np.float32)
+    x_source_cal = rng.normal(0.20, 0.04, size=(80, dim)).astype(np.float32)
+    x_source_test = rng.normal(0.20, 0.04, size=(60, dim)).astype(np.float32)
 
-    # 3. Check 5-tuple key overlap if endpoint columns present
-    tup_cols = ["ip_a", "port_a", "ip_b", "port_b", "proto"]
-    if all(c in train_df.columns for c in tup_cols) and all(c in eval_df.columns for c in tup_cols):
-        train_tuples = set(zip(*(train_df[c] for c in tup_cols)))
-        eval_tuples = set(zip(*(eval_df[c] for c in tup_cols)))
-        tup_overlap = train_tuples.intersection(eval_tuples)
-        if tup_overlap:
-            raise ValueError(
-                f"CRITICAL CROSS-DOMAIN LEAKAGE [{dataset_name}]: {len(tup_overlap)} 5-tuples overlap between train and eval!"
+    # Target domain (IoT-23 Benign / TQH-C2 stand-in): distinct distribution centered around 0.75
+    x_target_iot23 = rng.normal(0.75, 0.05, size=(60, dim)).astype(np.float32)
+    # Tag target rows with exact byte fingerprints so any row reaching fit/calib/scaler is caught
+    target_row_hashes = {row.tobytes() for row in x_target_iot23}
+
+    stages_checked = []
+
+    def sentinel_check_matrix(stage_name: str, arr: np.ndarray):
+        stages_checked.append(stage_name)
+        arr_f32 = np.asarray(arr, dtype=np.float32)
+        if arr_f32.ndim == 2:
+            for r in arr_f32:
+                if r.tobytes() in target_row_hashes:
+                    raise RuntimeError(
+                        f"TARGET DOMAIN LEAKAGE (IoT-23 / TQH-C2): target row reached '{stage_name}'!"
+                    )
+
+    # Wrap train_autoencoder and fit_evt_threshold in ips.eval.cross_domain with sentinel checks
+    orig_train_ae = cd.train_autoencoder
+    orig_fit_evt = cd.fit_evt_threshold
+
+    def guarded_train_ae(x_train, x_val, *args, **kwargs):
+        sentinel_check_matrix("model_fit", x_train)
+        sentinel_check_matrix("hyperparam_selection_val", x_val)
+        return orig_train_ae(x_train, x_val, *args, **kwargs)
+
+    cal_scores_expected_len = len(x_source_cal)
+
+    def guarded_fit_evt(scores, *args, **kwargs):
+        stages_checked.append("threshold_calibration")
+        if len(scores) != cal_scores_expected_len:
+            raise RuntimeError(
+                f"TARGET DOMAIN LEAKAGE: calibration score count {len(scores)} != source cal {cal_scores_expected_len}"
             )
+        return orig_fit_evt(scores, *args, **kwargs)
 
+    monkeypatch.setattr(cd, "train_autoencoder", guarded_train_ae)
+    monkeypatch.setattr(cd, "fit_evt_threshold", guarded_fit_evt)
 
-def test_cross_domain_leakage_guard_ton_iot():
-    """B7: Verify cross-domain evaluation strictly guards against train/test data leakage."""
-    # Synthetic train domain
-    train_df = pd.DataFrame(
-        {
-            "flow_id": [f"train_flow_{i}" for i in range(50)],
-            "ip_a": ["10.0.1.11"] * 50,
-            "port_a": list(range(1000, 1050)),
-            "ip_b": ["10.0.2.10"] * 50,
-            "port_b": [8883] * 50,
-            "proto": ["TCP"] * 50,
-            "size_0": np.random.uniform(0.1, 0.5, 50),
-        },
-        index=[f"idx_tr_{i}" for i in range(50)],
+    res = evaluate_cross_domain_pair(
+        x_source_train=x_source_train,
+        x_source_cal=x_source_cal,
+        x_source_test=x_source_test,
+        x_target_benign=x_target_iot23,
+        early_n=early_n,
+        target_fpr=0.05,
+        direction_name="testbed_to_iot23_tqh_c2",
+        epochs=3,
+        seed=42,
+        fit_hook=sentinel_check_matrix,
     )
 
-    # Clean out-of-domain evaluation set (e.g. TON_IOT)
-    eval_df_clean = pd.DataFrame(
-        {
-            "flow_id": [f"ton_iot_flow_{i}" for i in range(50)],
-            "ip_a": ["192.168.1.150"] * 50,
-            "port_a": list(range(2000, 2050)),
-            "ip_b": ["192.168.1.1"] * 50,
-            "port_b": [443] * 50,
-            "proto": ["TCP"] * 50,
-            "size_0": np.random.uniform(0.1, 0.5, 50),
-        },
-        index=[f"idx_eval_{i}" for i in range(50)],
-    )
+    # Assert all 4 fitting/calibration stages were verified by the sentinel
+    assert "scaler_fit" in stages_checked
+    assert "model_fit" in stages_checked
+    assert "hyperparam_selection_val" in stages_checked
+    assert "threshold_calibration" in stages_checked
 
-    # Clean evaluation must pass without raising
-    assert_no_cross_domain_leakage(train_df, eval_df_clean, dataset_name="TON_IOT")
+    # Assert scaler statistics equal those computed on x_source_train ALONE
+    expected_mean = np.mean(x_source_train, axis=0)
+    expected_std = np.std(x_source_train, axis=0)
+    assert "scaler_mean" in res and "scaler_std" in res
+    np.testing.assert_allclose(res["scaler_mean"], expected_mean, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(res["scaler_std"], expected_std, rtol=1e-6, atol=1e-6)
 
-    # Injected leakage 1: row index leakage
-    eval_df_leaked_idx = eval_df_clean.copy()
-    eval_df_leaked_idx.index = ["idx_tr_0"] + list(eval_df_clean.index[1:])
-    with pytest.raises(ValueError, match="CRITICAL CROSS-DOMAIN LEAKAGE.*row indices overlap"):
-        assert_no_cross_domain_leakage(train_df, eval_df_leaked_idx, dataset_name="TON_IOT")
-
-    # Injected leakage 2: flow_id leakage
-    eval_df_leaked_flow = eval_df_clean.copy()
-    eval_df_leaked_flow.loc[eval_df_leaked_flow.index[0], "flow_id"] = "train_flow_0"
-    with pytest.raises(ValueError, match="CRITICAL CROSS-DOMAIN LEAKAGE.*values overlap"):
-        assert_no_cross_domain_leakage(train_df, eval_df_leaked_flow, dataset_name="TON_IOT")
-
-    # Injected leakage 3: 5-tuple leakage
-    eval_df_leaked_tuple = eval_df_clean.copy()
-    eval_df_leaked_tuple.loc[eval_df_leaked_tuple.index[0], "ip_a"] = "10.0.1.11"
-    eval_df_leaked_tuple.loc[eval_df_leaked_tuple.index[0], "port_a"] = 1000
-    eval_df_leaked_tuple.loc[eval_df_leaked_tuple.index[0], "ip_b"] = "10.0.2.10"
-    eval_df_leaked_tuple.loc[eval_df_leaked_tuple.index[0], "port_b"] = 8883
-    eval_df_leaked_tuple.loc[eval_df_leaked_tuple.index[0], "proto"] = "TCP"
-    with pytest.raises(ValueError, match="CRITICAL CROSS-DOMAIN LEAKAGE.*5-tuples overlap"):
-        assert_no_cross_domain_leakage(train_df, eval_df_leaked_tuple, dataset_name="TON_IOT")
+    # Verify that if a target row from IoT-23/TQH-C2 leaks into train or cal, the guard raises
+    x_contaminated_train = x_source_train.copy()
+    x_contaminated_train[0] = x_target_iot23[0]
+    with pytest.raises((RuntimeError, ValueError), match="LEAKAGE"):
+        evaluate_cross_domain_pair(
+            x_source_train=x_contaminated_train,
+            x_source_cal=x_source_cal,
+            x_source_test=x_source_test,
+            x_target_benign=x_target_iot23,
+            early_n=early_n,
+            epochs=2,
+            fit_hook=sentinel_check_matrix,
+        )

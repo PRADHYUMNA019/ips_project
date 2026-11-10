@@ -292,3 +292,48 @@ def test_contamination_study_and_trimmed_loss(tmp_path):
     assert (tmp_path / "contamination_study.csv").exists()
 
 
+def test_short_flow_masked_padding_invariance_c1():
+    """
+    C1 (Prompt 6 §7): Verify that for a short flow (valid_len = 4 < early_n = 12),
+    reconstruction loss and anomaly score are computed strictly over positions < valid_len,
+    and changing padded positions (>= valid_len) does NOT change the anomaly score.
+    """
+    try:
+        import torch
+    except ImportError:
+        pytest.skip("PyTorch not installed")
+    from ips.features import build_early_vector
+    from ips.models.autoencoder import EarlyFlowAutoencoder
+
+    early_n = 12
+    input_dim = 3 * early_n + 8  # 44
+    torch.manual_seed(42)
+    ae = EarlyFlowAutoencoder(input_dim=input_dim)
+
+    # Short flow with valid_len = 4 (packets 0..3 only; positions 4..11 are padding)
+    vec_zero_padded = build_early_vector(
+        sizes=[200, 150, 300, 120],
+        dirs=[0, 1, 0, 1],
+        iat_ms_list=[10.0, 15.0, 20.0],
+        early_n=early_n,
+    )
+    # Create a copy where all padded slots (size_4..11, dir_4..11, log_iat_3..10) are perturbed
+    vec_perturbed_pad = vec_zero_padded.copy()
+    vec_perturbed_pad[4:early_n] = 0.99                  # perturb padded sizes
+    vec_perturbed_pad[early_n + 4 : 2 * early_n] = 1.0   # perturb padded dirs
+    vec_perturbed_pad[2 * early_n + 3 : 3 * early_n - 1] = 6.5  # perturb padded log_iats
+
+    x_batch = np.stack([vec_zero_padded, vec_perturbed_pad], axis=0)
+    scores, sq_err = ae.get_reconstruction_error(x_batch)
+
+    # 1. Anomaly score must be invariant to padding values
+    assert scores[0] == pytest.approx(scores[1], abs=1e-7), (
+        f"Short-flow score changed when padding values changed: {scores[0]:.6f} vs {scores[1]:.6f}"
+    )
+    # 2. Squared error on padded positions (>= valid_len) must be strictly zero
+    assert np.all(sq_err[:, 4:early_n] == 0.0), "Padded size slots must have zero masked squared error"
+    assert np.all(sq_err[:, early_n + 4 : 2 * early_n] == 0.0), "Padded dir slots must have zero masked squared error"
+    assert np.all(sq_err[:, 2 * early_n + 3 : 3 * early_n - 1] == 0.0), "Padded log_iat slots must have zero masked squared error"
+
+
+

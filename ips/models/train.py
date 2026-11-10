@@ -32,6 +32,7 @@ from ips.features import (
     build_early_vector,
     assert_no_forbidden_features,
     recompute_early_matrix_for_k,
+    build_valid_mask_matrix,
 )
 from ips.models.autoencoder import EarlyFlowAutoencoder, KitsuneStyleEnsemble
 from ips.models.evt import fit_evt_threshold, allocate_checkpoint_alpha_budget
@@ -78,7 +79,7 @@ def extract_matrix_from_df(df: pd.DataFrame, early_n: int = 12) -> Tuple[np.ndar
 def train_autoencoder(X_train: np.ndarray, X_val: np.ndarray, input_dim: int,
                       epochs: int = 25, batch_size: int = 64, lr: float = 0.002,
                       seed: int = 42):
-    """Train PyTorch Autoencoder with early stopping on benign validation loss."""
+    """Train PyTorch Autoencoder with masked MSE loss over positions < valid_len (C1)."""
     if torch is None:
         raise RuntimeError("torch is required to train Autoencoder")
     torch.manual_seed(seed)
@@ -86,12 +87,17 @@ def train_autoencoder(X_train: np.ndarray, X_val: np.ndarray, input_dim: int,
 
     model = EarlyFlowAutoencoder(input_dim=input_dim)
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
-    criterion = nn.MSELoss()
 
-    dataset = TensorDataset(torch.from_numpy(X_train), torch.from_numpy(X_train))
+    mask_tr = build_valid_mask_matrix(X_train)
+    mask_va = build_valid_mask_matrix(X_val)
+    x_tr_masked = (X_train.astype(np.float32) * mask_tr)
+    x_va_masked = (X_val.astype(np.float32) * mask_va)
+
+    dataset = TensorDataset(torch.from_numpy(x_tr_masked), torch.from_numpy(mask_tr))
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    val_t = torch.from_numpy(X_val)
+    val_t = torch.from_numpy(x_va_masked)
+    val_m = torch.from_numpy(mask_va)
     best_loss = float("inf")
     best_weights = None
     patience = 5
@@ -99,17 +105,19 @@ def train_autoencoder(X_train: np.ndarray, X_val: np.ndarray, input_dim: int,
 
     model.train()
     for _ in range(epochs):
-        for batch_x, _ in loader:
+        for batch_x, batch_m in loader:
             optimizer.zero_grad()
             out = model(batch_x)
-            loss = criterion(out, batch_x)
+            sq = ((out - batch_x) ** 2) * batch_m
+            loss = (sq.sum(dim=1) / torch.clamp(batch_m.sum(dim=1), min=1.0)).mean()
             loss.backward()
             optimizer.step()
 
         model.eval()
         with torch.no_grad():
             val_out = model(val_t)
-            val_loss = criterion(val_out, val_t).item()
+            val_sq = ((val_out - val_t) ** 2) * val_m
+            val_loss = (val_sq.sum(dim=1) / torch.clamp(val_m.sum(dim=1), min=1.0)).mean().item()
 
         if val_loss < best_loss:
             best_loss = val_loss
