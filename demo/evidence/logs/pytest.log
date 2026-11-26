@@ -1,0 +1,34 @@
+# Evidence Type: UNIT TEST
+# UTC Timestamp: 2026-11-26T05:57:31Z
+# Git Commit: 3b3050f
+# Command: C:\Users\Dell\AppData\Local\Programs\Python\Python312\python.exe -m pytest -q
+# Exit Code: 0
+
+....................................................................     [100%]
+============================== warnings summary ===============================
+tests/test_models.py::test_onnx_export_and_int8_quantization
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+  C:\Users\Dell\finalyr_project\ips\models\quantize.py:47: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+    torch.onnx.export(
+
+tests/test_models.py::test_onnx_export_and_int8_quantization
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+tests/test_models.py::test_train_and_eval_pipeline_runs_only
+  C:\Users\Dell\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\onnx\_internal\torchscript_exporter\utils.py:218: DeprecationWarning: The feature will be removed. Please remove usage of this function
+    setup_onnx_logging(verbose) as log_ctx,
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+68 passed, 18 warnings in 70.67s (0:01:10)

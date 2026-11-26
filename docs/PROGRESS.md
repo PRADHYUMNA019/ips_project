@@ -50,3 +50,10 @@
 - Libbpf / CO-RE precompiled bytecode loader
 - Extended public datasets (full CIC-IDS2018 220GB, full CIC-IoT-2023)
 - Full paper prose and camera-ready formatting
+
+---
+
+## Prompt 8 — Windows-Only Guide-Review Evidence Pack (branch `p8-demo`)
+> **Honesty Reminder (R1/R2)**: All Prompt 8 runs are on Windows (`UNIT TEST`, `SYNTHETIC SMOKE`, or `REAL PUBLIC DATA` offline). **No Linux/kernel/real-testbed result exists yet.**
+
+- **P8.1 (UNIT TEST evidence) — DONE**: Removed untracked `BLOCKERS.md`; branched `p8-demo` from `wp0-fix-30pct` (`3b3050f`). Ran `pytest -q` (**68 passed, 0 failed, 0 skipped**), `compileall -q .` (rc=0), `audit/check_claims.py` (0 forbidden phrases, 3/3 titles consistent), `audit/mutation_runner.py` (**17/17 KILLED, 0 survived, 0 invalid**). Saved timestamped logs under `demo/evidence/logs/` and created `demo/run_demo.ps1`.

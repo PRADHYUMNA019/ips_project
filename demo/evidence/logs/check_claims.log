@@ -1,0 +1,25 @@
+# Evidence Type: UNIT TEST
+# UTC Timestamp: 2026-11-26T05:58:46Z
+# Git Commit: 3b3050f
+# Command: C:\Users\Dell\AppData\Local\Programs\Python\Python312\python.exe audit/check_claims.py
+# Exit Code: 0
+
+=== Scanning Repository for Claims, Overstatements, and Forbidden Wording ===
+
+1. Explicit Forbidden Phrases Found: 0
+
+2. Keywords Scanned ('On-Device', 'Raspberry', etc.): 9
+  [KEYWORD] docs/LIMITATIONS.md:11 (Raspberry): - Physical embedded gateway deployments (e.g. Raspberry Pi 4/5, OpenWrt routers) are designated as post-60% validation.
+  [KEYWORD] docs/PAPER_OUTLINE.md:3 (On-Device): **Working Title**: *Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks*
+  [KEYWORD] docs/PROGRESS.md:49 (Raspberry): - Physical embedded gateway deployment (e.g. Raspberry Pi 4/5 or OpenWrt hardware router)
+  [KEYWORD] docs/spec.md:1 (On-Device): # System Specification: Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks
+  [KEYWORD] docs/TODO_USER.md:59 (Raspberry): - Flash OpenWrt or Linux onto physical edge hardware (e.g. Raspberry Pi or embedded router).
+  [KEYWORD] docs/TODO_USER.md:59 (edge hardware): - Flash OpenWrt or Linux onto physical edge hardware (e.g. Raspberry Pi or embedded router).
+  [KEYWORD] README.md:1 (On-Device): # Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks
+  [KEYWORD] README.md:44 (hardware validation): - Physical embedded hardware validation (planned post-60% scope)
+  [KEYWORD] scripts/demo.sh:9 (edge hardware): echo -e "\033[1;30m   Scope: Network namespace testbed with cgroup resource limits. No edge hardware.       \033[0m"
+
+3. Title Consistency Check (Rule R4):
+  [README.md]: Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks
+  [docs/spec.md]: Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks
+  [docs/PAPER_OUTLINE.md]: Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks

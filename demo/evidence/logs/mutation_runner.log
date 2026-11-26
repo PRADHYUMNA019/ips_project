@@ -1,0 +1,65 @@
+# Evidence Type: UNIT TEST
+# UTC Timestamp: 2026-11-26T05:58:48Z
+# Git Commit: 3b3050f
+# Command: C:\Users\Dell\AppData\Local\Programs\Python\Python312\python.exe audit/mutation_runner.py
+# Exit Code: 0
+
+=== Running Adversarial Mutation Testing Suite ===
+
+--- Step 0: Running Global Baseline Suite (17 targets, no mutation) ---
+  [GLOBAL BASELINE PASSED] (17 passed in 11.66s)
+
+--- Running Mutation M1: Count zero-payload packets (e.g. pure SYN/ACK) in early-flow window ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed, 1 passed in 1.37s)
+
+--- Running Mutation M2: Flip direction convention (0 = client->server from LAN side) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed, 1 passed in 1.25s)
+
+--- Running Mutation M3: Change normalization constant (/1500.0 -> /1400.0) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 1.19s)
+
+--- Running Mutation M4: Remove / neutralise forbidden-column shortcut guard ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 1.20s)
+
+--- Running Mutation M5: Disable assertion that sessions appear in only one split ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 7.16s)
+
+--- Running Mutation M6: Allow attack flows into calibration split ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 7.03s)
+
+--- Running Mutation M7: Swap sign in EVT Generalized Pareto threshold formula ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 4.70s)
+
+--- Running Mutation M8: Off-by-one in split-conformal quantile index ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 4.31s)
+
+--- Running Mutation M9: Shift time window comparison in manifest label join ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 5.81s)
+
+--- Running Mutation M10: Disable guard check G2 (force cross-device quorum to always pass) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 3.41s)
+
+--- Running Mutation M10b: Disable guard check G3 (force non-periodicity to always pass) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 3.72s)
+
+--- Running Mutation M11: Make observe mode write verdicts to BPF map (violates observe contract) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 7.81s)
+
+--- Running Mutation M12: Reintroduce trimmed-line bug in topology.sh parse_devices ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 0.24s)
+
+--- Running Mutation M13: Ignore TTL expiry in verdict cache logic (stale entries never expire) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 12.10s)
+
+--- Running Mutation M14: Change checkpoint_idx type from uint8 to uint32 in ctypes struct ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed, 1 passed in 1.02s)
+
+--- Running Mutation M15: Corrupt FPR denominator (fp/(tp+fn) instead of fp/(fp+tn)) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed, 1 passed in 9.26s)
+
+--- Running Mutation M16: Invert Coefficient of Variation calculation (mean/std instead of std/mean) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 3.53s)
+
+================== Mutation Results Summary ==================
+Total: 17 | KILLED: 17 | SURVIVED: 0 | BASELINE FAILS: 0 | INVALID: 0
+Report written to: C:\Users\Dell\finalyr_project\audit\mutation_results.md
