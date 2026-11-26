@@ -1,0 +1,2 @@
+SYNTHETIC SMOKE DATA — NOT A RESULT
+Figure (d): Clean benign FPR across windows 0..15 for drift scenarios S1-S5 comparing static thresholds against the PoisoningAwareDriftGuard (G1-G4 + bounded step + rollback) on synthetic smoke streams.

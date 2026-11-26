@@ -1,0 +1,2 @@
+SYNTHETIC SMOKE DATA — NOT A RESULT
+Figure (a): ROC and Precision-Recall curves per progressive checkpoint (k=4, 8, 16 payload packets) computed on synthetic smoke flows (pipeline demonstration only; not a research result).

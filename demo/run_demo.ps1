@@ -37,7 +37,7 @@ function Invoke-DemoStep {
     $t0 = Get-Date
     Push-Location $RepoRoot
     try {
-        & python @CmdArgs
+        & python @CmdArgs | Out-Host
         $rc = $LASTEXITCODE
     } finally {
         Pop-Location

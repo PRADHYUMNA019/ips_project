@@ -1,0 +1,2 @@
+SYNTHETIC SMOKE DATA — NOT A RESULT
+Figure (b): Attack detection rate (TPR) versus mean attack payload packets leaked before verdict, comparing single fixed checkpoints (k=4, 8, 16) against progressive [4, 8, 16] early-drop on synthetic smoke data.

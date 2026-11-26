@@ -1,0 +1,2 @@
+SYNTHETIC SMOKE DATA — NOT A RESULT
+Figure (e): Query-bounded (Q=200) white-box adaptive-attacker cost-of-evasion curve showing minimum achievable detection probability across utility floors for single-window, progressive [4,8,16], and full Tier-2 stack (synthetic smoke).

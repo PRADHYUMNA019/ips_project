@@ -25,3 +25,14 @@
 - **Adversarial mutation runner (`demo/evidence/logs/mutation_runner.log`)**:
   - Command: `python audit/mutation_runner.py`
   - Output: `Total: 17 | KILLED: 17 | SURVIVED: 0 | BASELINE FAILS: 0 | INVALID: 0` (exit code `0`)
+
+---
+
+## Phase 2 — End-to-End Synthetic Smoke Pipeline & Watermarked Figures (`SYNTHETIC SMOKE`)
+
+- **End-to-end smoke pipeline + determinism check**:
+  - Command: `python demo/run_smoke_pipeline.py --check-determinism`
+  - Output: `[DETERMINISM CHECK] 10/10 deterministic artefacts byte-for-byte IDENTICAL.` / `[+] Wrote smoke pipeline summary to demo/evidence/smoke/smoke_pipeline_summary.json`
+- **PowerShell demo runner from external working directory (`C:\Users\Dell`)**:
+  - Command: `Push-Location C:\Users\Dell; powershell -ExecutionPolicy Bypass -File C:\Users\Dell\finalyr_project\demo\run_demo.ps1`
+  - Output: `FINAL DEMO SUMMARY (Total: 71.1s)` / `OVERALL: PASS (UNIT TEST + SYNTHETIC SMOKE ONLY — No Linux/kernel/real-testbed result)` (exit code `0`)

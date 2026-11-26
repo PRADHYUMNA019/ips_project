@@ -1,0 +1,2 @@
+SYNTHETIC SMOKE DATA — NOT A RESULT
+Figure (c): Target FPR vs. achieved benign FPR across EVT (POT GPD), split-conformal, and fixed mean+3sigma thresholds on synthetic smoke data (0 achieved FPR floored at 1e-5 for log plotting).
