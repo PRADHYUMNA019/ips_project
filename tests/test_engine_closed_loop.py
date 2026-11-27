@@ -419,6 +419,56 @@ def test_sticky_drop_verdict_c2():
     assert dec16["verdict_written"] != "BYPASS"
 
 
+def test_engine_loads_configured_model_card_and_benign_reaches_bypass_p9_1e(tmp_path):
+    """Prompt 9 Item 1e: IPSEngine must load config['engine']['model_card'] into ckpt_sessions
+    so benign sensor traffic reaches BYPASS at k=16 while high-rate exfil gets DROP at k=4."""
+    from ips.smoke.synth import generate_smoke_dataset
+    from ips.models.train import train_pipeline
+    from ips.engine.engine import IPSEngine, MockBPFBackend
+
+    tr_csv = str(tmp_path / "tr.csv")
+    ca_csv = str(tmp_path / "ca.csv")
+    mdir = str(tmp_path / "models")
+    generate_smoke_dataset(n_benign=120, n_attack=0, early_n=16, session_id="s1", out_csv=tr_csv, seed=42)
+    generate_smoke_dataset(n_benign=100, n_attack=0, early_n=16, session_id="s2", out_csv=ca_csv, seed=43)
+    train_pipeline(data_path=tr_csv, calib_path=ca_csv, early_n=16, checkpoints=[4, 8, 16], epochs=35, seed=42, model_dir=mdir)
+    card_path = str(tmp_path / "models" / "model_card.json")
+
+    cfg = {
+        "system": {"early_n": 16, "checkpoints": [4, 8, 16]},
+        "engine": {"mode": "enforce", "model_card": card_path, "bypass_enabled": True},
+    }
+    backend = MockBPFBackend(early_n=16, checkpoints=[4, 8, 16])
+    engine = IPSEngine(config=cfg, backend=backend, mode_override="enforce", bypass_override=True)
+
+    assert set(engine.ckpt_sessions.keys()) == {4, 8, 16}, (
+        f"Expected ckpt_sessions for {{4,8,16}} from configured model_card, got {list(engine.ckpt_sessions.keys())}"
+    )
+
+    t0 = 10_000_000_000
+    atk_verdicts = []
+    for pkt_i in range(1, 10):
+        _, ev = backend.simulate_packet("10.0.1.4", 44444, "10.0.2.10", 8443, "TCP", 1450, 0, t0 + pkt_i * 1_000_000)
+        if ev is not None:
+            d = engine.handle_early_flow_event(ev, now_ns=t0 + pkt_i * 1_000_000)
+            atk_verdicts.append(d["verdict_written"])
+    assert atk_verdicts[0] == "DROP", f"Attack exfil flow should DROP at k=4, got {atk_verdicts}"
+
+    benign_verdicts = []
+    for pkt_i in range(1, 18):
+        _, ev = backend.simulate_packet(
+            "10.0.1.11", 51001, "10.0.2.10", 8883, "TCP",
+            56 if (pkt_i - 1) % 2 == 1 else 64, (pkt_i - 1) % 2, t0 + pkt_i * 10_000_000_000,
+        )
+        if ev is not None:
+            d = engine.handle_early_flow_event(ev, now_ns=t0 + pkt_i * 10_000_000_000)
+            benign_verdicts.append(d["verdict_written"])
+    assert benign_verdicts == ["CONTINUE", "CONTINUE", "BYPASS"], (
+        f"Benign sensor flow expected ['CONTINUE', 'CONTINUE', 'BYPASS'], got {benign_verdicts}"
+    )
+
+
+
 
 
 

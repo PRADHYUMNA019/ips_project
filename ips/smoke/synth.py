@@ -107,13 +107,20 @@ def generate_flow_vector(
                 if i > 0:
                     iats.append(random.uniform(8000.0, 14000.0))
         elif attack_family == "A3_c2":
+            # Encrypted C2 session: small periodic client check-in followed by 3-chunk downlink tasking burst
             base_interval_ms = random.choice([5000.0, 15000.0, 30000.0])
             for i in range(early_n):
-                dirs.append(0 if i % 2 == 0 else 1)
-                sizes.append(int(random.gauss(80, 5)))
-                if i > 0:
-                    jitter = random.uniform(-0.15, 0.15) * base_interval_ms
-                    iats.append(max(50.0, base_interval_ms + jitter))
+                if i % 4 == 0:
+                    dirs.append(0)
+                    sizes.append(int(random.gauss(52, 6)))
+                    if i > 0:
+                        jitter = random.uniform(-0.15, 0.15) * base_interval_ms
+                        iats.append(max(50.0, base_interval_ms + jitter))
+                else:
+                    dirs.append(1)
+                    sizes.append(int(random.gauss(920, 45)))
+                    if i > 0:
+                        iats.append(max(0.5, random.gauss(4.0, 1.2)))
         elif attack_family == "A4_exfil":
             for i in range(early_n):
                 dirs.append(0)

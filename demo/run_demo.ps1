@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Windows Guide-Review Demo Runner for ips_project (Prompt 8).
     Runs from any working directory:

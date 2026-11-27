@@ -336,4 +336,84 @@ def test_short_flow_masked_padding_invariance_c1():
     assert np.all(sq_err[:, 2 * early_n + 3 : 3 * early_n - 1] == 0.0), "Padded log_iat slots must have zero masked squared error"
 
 
+def test_toy_gaussian_cluster_all_checkpoints_and_length_comparability_p9_1d(tmp_path):
+    """
+    Prompt 9 Item 1d:
+      1. Train on a tight benign Gaussian cluster and score a far-away anomaly cluster
+         across all three checkpoints (k=4, 8, 16) via ONNX; assert AUROC > 0.90 for all three
+         (including when anomaly values are smaller in magnitude than benign values).
+      2. Verify score_onnx_model and get_reconstruction_error give comparable masked scores
+         for valid_len=4 vs valid_len=16 when active per-position errors are identical.
+    """
+    try:
+        import torch
+        import onnxruntime  # noqa: F401
+    except ImportError:
+        pytest.skip("PyTorch or onnxruntime not installed")
+
+    from sklearn.metrics import roc_auc_score
+    from ips.features import build_valid_mask_matrix
+    from ips.models.train import train_autoencoder
+    from ips.models.quantize import export_to_onnx
+    from ips.models.eval_offline import score_onnx_model
+
+    rng = np.random.default_rng(42)
+    for k in (4, 8, 16):
+        dim_k = 3 * k + 8
+        # Tight benign cluster at 0.85 vs anomaly cluster at 0.15 (smaller magnitude, testing decoder convergence)
+        x_ben_tr = rng.normal(0.85, 0.02, size=(120, dim_k)).clip(0.01, 1.20).astype(np.float32)
+        x_ben_tr[:, -1] = 1.0
+        x_ben_te = rng.normal(0.85, 0.02, size=(50, dim_k)).clip(0.01, 1.20).astype(np.float32)
+        x_ben_te[:, -1] = 1.0
+        x_atk_te = rng.normal(0.15, 0.04, size=(50, dim_k)).clip(0.01, 1.20).astype(np.float32)
+        x_atk_te[:, -1] = 1.0
+
+        ae_k, _ = train_autoencoder(x_ben_tr[:100], x_ben_tr[100:], input_dim=dim_k, seed=42 + k)
+        onnx_k = str(tmp_path / f"toy_ae_k{k}.onnx")
+        export_to_onnx(ae_k, dim_k, onnx_k)
+
+        x_eval = np.vstack([x_ben_te, x_atk_te])
+        y_eval = np.array([0] * 50 + [1] * 50)
+        scores_onnx = score_onnx_model(onnx_k, x_eval)
+        auroc_k = float(roc_auc_score(y_eval, scores_onnx))
+        assert auroc_k > 0.90, f"Checkpoint k={k} failed toy cluster separation: AUROC={auroc_k:.4f}"
+
+    # Part 2: Comparable masked scores for valid_len=4 vs valid_len=16 under identical per-position error
+    early_n = 16
+    dim_16 = 3 * early_n + 8  # 56
+    ae_id_len = EarlyFlowAutoencoder(input_dim=dim_16)
+    with torch.no_grad():
+        for p in ae_id_len.parameters():
+            p.zero_()
+        # Route valid_len (index -1) identically to output[-1] so valid_len slot itself has 0 error,
+        # while every other active slot outputs 0 -> identical per-position error (0.30^2 = 0.09)
+        ae_id_len.encoder[0].weight[0, -1] = 1.0
+        ae_id_len.encoder[2].weight[0, 0] = 1.0
+        ae_id_len.encoder[4].weight[0, 0] = 1.0
+        ae_id_len.decoder[0].weight[0, 0] = 1.0
+        ae_id_len.decoder[2].weight[0, 0] = 1.0
+        ae_id_len.decoder[4].weight[-1, 0] = 1.0
+
+    onnx_zero = str(tmp_path / "zero_ae.onnx")
+    export_to_onnx(ae_id_len, dim_16, onnx_zero)
+
+    v_short = np.full(dim_16, 0.30, dtype=np.float32)
+    v_short[-1] = 4.0 / 16.0
+    v_long = np.full(dim_16, 0.30, dtype=np.float32)
+    v_long[-1] = 16.0 / 16.0
+    mask_pair = build_valid_mask_matrix(np.stack([v_short, v_long], axis=0))
+    v_short = v_short * mask_pair[0]
+    v_short[:-1][mask_pair[0][:-1] > 0] = 0.30
+    v_long[:-1] = 0.30
+
+    s_onnx = score_onnx_model(onnx_zero, np.stack([v_short, v_long], axis=0))
+    s_pt, _ = ae_id_len.get_reconstruction_error(np.stack([v_short, v_long], axis=0))
+    assert np.allclose(s_onnx, s_pt, atol=1e-6), f"score_onnx_model ({s_onnx}) != masked PyTorch ({s_pt})"
+    assert abs(float(s_onnx[0]) - float(s_onnx[1])) < 0.01, (
+        f"valid_len=4 and valid_len=16 with identical active errors diverged: {s_onnx[0]:.4f} vs {s_onnx[1]:.4f}"
+    )
+
+
+
+
 

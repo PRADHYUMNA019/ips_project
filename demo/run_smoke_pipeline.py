@@ -118,9 +118,6 @@ def run_mock_closed_loop_demo(card_path: str, early_n: int = 16, seed: int = 42)
     }
     backend = MockBPFBackend(early_n=early_n, checkpoints=[4, 8, 16])
     engine = IPSEngine(config=cfg, backend=backend, mode_override="enforce", bypass_override=True)
-    # Deterministic calibration thresholds for smoke mock demo
-    engine.checkpoint_thresholds = {4: 0.25, 8: 0.25, 16: 0.25}
-    engine.threshold = 0.25
 
     t0 = 10_000_000_000
     decisions = []
@@ -141,13 +138,13 @@ def run_mock_closed_loop_demo(card_path: str, early_n: int = 16, seed: int = 42)
     }
     sticky_d = engine.handle_early_flow_event(fake_benign_late_ev, now_ns=t0 + 25_000_000)
 
-    # 2. Benign flow (small periodic MQTT-like -> continues at k=4,8, receives BYPASS at k=16)
+    # 2. Benign flow (small periodic MQTT sensor at 10s interval, client-first (pkt_i-1)%2 -> continues at k=4,8, BYPASS at k=16)
     for pkt_i in range(1, 20):
         act, ev = backend.simulate_packet(
-            "10.0.1.11", 51001, "10.0.2.10", 8883, "TCP", 64, pkt_i % 2, t0 + pkt_i * 500_000_000
+            "10.0.1.11", 51001, "10.0.2.10", 8883, "TCP", 56 if (pkt_i - 1) % 2 == 1 else 64, (pkt_i - 1) % 2, t0 + pkt_i * 10_000_000_000
         )
         if ev is not None:
-            d = engine.handle_early_flow_event(ev, now_ns=t0 + pkt_i * 500_000_000)
+            d = engine.handle_early_flow_event(ev, now_ns=t0 + pkt_i * 10_000_000_000)
             decisions.append({"flow": "benign_sensor_1", "pkt": pkt_i, "verdict": d["verdict_written"], "score": round(float(d["score"]), 6)})
 
     # 3. Watchdog load-shedding activation & cooldown recovery
@@ -196,17 +193,21 @@ def generate_smoke_figures(
     ckpt_metrics_summary = {}
     for idx, k in enumerate(ckpts):
         cinfo = ckpt_cfg[str(k)]
-        X_k, _, _ = extract_matrix_from_df(test_df, early_n=k)
+        sub_k = test_df[test_df["raw_valid_len"] >= k] if "raw_valid_len" in test_df.columns else test_df
+        y_k = sub_k["is_attack"].to_numpy(dtype=int)
+        X_k, _, _ = extract_matrix_from_df(sub_k, early_n=k)
         onnx_p = cinfo.get("onnx_int8_path", cinfo.get("onnx_fp32_path"))
-        scores_k = score_onnx_model(onnx_p, X_k)
-        fpr, tpr, _ = roc_curve(y_true, scores_k)
-        prec, rec, _ = precision_recall_curve(y_true, scores_k)
+        scores_k_reach = score_onnx_model(onnx_p, X_k)
+        X_all_k, _, _ = extract_matrix_from_df(test_df, early_n=k)
+        scores_k_all = score_onnx_model(onnx_p, X_all_k)
+        fpr, tpr, _ = roc_curve(y_k, scores_k_reach)
+        prec, rec, _ = precision_recall_curve(y_k, scores_k_reach)
         roc_auc = auc(fpr, tpr)
         pr_auc = auc(rec, prec)
-        ckpt_metrics_summary[k] = (scores_k, roc_auc, pr_auc)
+        ckpt_metrics_summary[k] = (scores_k_all, roc_auc, pr_auc)
         col = colors[idx % len(colors)]
-        ax1.plot(fpr, tpr, color=col, lw=2.0, label=f"k={k} pkts (AUROC={roc_auc:.3f})")
-        ax2.plot(rec, prec, color=col, lw=2.0, label=f"k={k} pkts (AUPRC={pr_auc:.3f})")
+        ax1.plot(fpr, tpr, color=col, lw=2.0, label=f"k={k} pkts (n={len(sub_k)}, AUROC={roc_auc:.3f})")
+        ax2.plot(rec, prec, color=col, lw=2.0, label=f"k={k} pkts (n={len(sub_k)}, AUPRC={pr_auc:.3f})")
 
     ax1.plot([0, 1], [0, 1], "--", color="gray", lw=1)
     ax1.set_xlabel("False Positive Rate")
@@ -387,7 +388,7 @@ def generate_smoke_figures(
         )
 
 
-def run_once(work_dir: str, fig_dir: str = None, epochs: int = 8, seed: int = 42) -> Dict[str, Any]:
+def run_once(work_dir: str, fig_dir: str = None, epochs: int = 50, seed: int = 42) -> Dict[str, Any]:
     """Run the entire synthetic smoke pipeline deterministically into work_dir."""
     random.seed(seed)
     np.random.seed(seed)
@@ -511,7 +512,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run end-to-end synthetic smoke pipeline (Prompt 8 Phase 2)")
     parser.add_argument("--fast", action="store_true", help="Single pass (used by demo/run_demo.ps1)")
     parser.add_argument("--check-determinism", action="store_true", help="Run twice and diff all deterministic artefacts")
-    parser.add_argument("--epochs", type=int, default=8)
+    parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 

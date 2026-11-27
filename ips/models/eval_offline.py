@@ -25,6 +25,7 @@ from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
 
+from ips.features import build_valid_mask_matrix
 from ips.models.train import extract_matrix_from_df, is_smoke_dataframe, train_autoencoder
 from ips.models.evt import clopper_pearson_ci, compute_calibration_curve, fit_evt_threshold
 from ips.smoke.synth import SMOKE_BANNER
@@ -69,11 +70,15 @@ def evaluate_scores(y_true: np.ndarray, scores: np.ndarray, thresholds_dict: Dic
 
 
 def score_onnx_model(onnx_path: str, X: np.ndarray) -> np.ndarray:
-    """Compute per-sample reconstruction MSE using an ONNX model."""
+    """Compute masked per-sample reconstruction MSE over positions < valid_len (C1) using an ONNX model."""
+    mask = build_valid_mask_matrix(X)
+    x_masked = (X.astype(np.float32) * mask)
     sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
     inp_name = sess.get_inputs()[0].name
-    out = sess.run(None, {inp_name: X.astype(np.float32)})[0]
-    return np.mean(np.square(X - out), axis=1)
+    out = sess.run(None, {inp_name: x_masked})[0]
+    sq_err = ((x_masked - out) ** 2) * mask
+    denom = np.maximum(1.0, mask.sum(axis=1))
+    return (sq_err.sum(axis=1) / denom).astype(np.float32)
 
 
 def compute_time_to_verdict_ms(df: pd.DataFrame, early_n: int) -> np.ndarray:

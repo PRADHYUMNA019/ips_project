@@ -335,8 +335,9 @@ class IPSEngine:
             self.early_n = int(early_n_cfg) if early_n_cfg is not None else 12
             self.checkpoints = [self.early_n]
 
-        self.alpha_spending = str(sys_cfg.get("alpha_spending", "equal"))
-        self.mode = mode_override if mode_override is not None else str(sys_cfg.get("mode", "observe"))
+        self.alpha_spending = str(eng_cfg.get("alpha_spending", sys_cfg.get("alpha_spending", "equal")))
+        self.target_fpr_key = str(eng_cfg.get("target_fpr_key", sys_cfg.get("target_fpr_key", "001")))
+        self.mode = mode_override if mode_override is not None else str(eng_cfg.get("mode", sys_cfg.get("mode", "observe")))
         if bypass_override is not None:
             self.bypass_enabled = bool(bypass_override)
         else:
@@ -370,6 +371,7 @@ class IPSEngine:
 
         # Load model card & ONNX Runtime sessions (global + per-checkpoint) if available
         self.threshold = 0.25
+        self._loaded_threshold = 0.25
         self.ckpt_thresholds: Dict[int, float] = {k: 0.25 for k in self.checkpoints}
         self.ckpt_sessions: Dict[int, Any] = {}
         self.per_class_thresholds: Dict[str, float] = {}
@@ -377,6 +379,7 @@ class IPSEngine:
         self.ort_session = None
         self._load_device_registry(sys_cfg.get("devices_path", "configs/devices.yaml"))
         self._load_model_and_thresholds(sys_cfg.get("model_path", "models/autoencoder_int8.onnx"))
+        self._loaded_threshold = self.threshold
 
     def _load_device_registry(self, devices_rel_path: str):
         path = os.path.join(REPO_DIR, devices_rel_path) if not os.path.isabs(devices_rel_path) else devices_rel_path
@@ -388,21 +391,32 @@ class IPSEngine:
                     self.ip_to_class[str(dev["ip"])] = str(dev["class"])
 
     def _load_model_and_thresholds(self, model_rel_path: str):
-        card_path = os.path.join(REPO_DIR, "models", "model_card.json")
+        eng_cfg = self.config.get("engine", {})
+        sys_cfg = self.config.get("system", {})
+        cfg_card = eng_cfg.get("model_card") or sys_cfg.get("model_card")
+        if cfg_card:
+            card_path = os.path.join(REPO_DIR, cfg_card) if not os.path.isabs(cfg_card) else cfg_card
+        else:
+            card_path = os.path.join(REPO_DIR, "models", "model_card.json")
+        card_global_onnx = None
         if os.path.exists(card_path):
             try:
                 with open(card_path, "r", encoding="utf-8") as f:
                     card = json.load(f)
+                card_global_onnx = card.get("onnx_int8_path", card.get("onnx_fp32_path"))
                 if int(card.get("early_n", self.early_n)) == self.early_n:
                     self.threshold = float(card.get("evt_calibration", {}).get("threshold", self.threshold))
                     for cls_name, info in card.get("per_class_models", {}).items():
                         if "evt_001" in info:
                             self.per_class_thresholds[cls_name] = float(info["evt_001"])
-                tau_key = "tau_front_001" if self.alpha_spending == "front_loaded" else "tau_equal_001"
+                tau_prefix = "tau_front_" if self.alpha_spending == "front_loaded" else "tau_equal_"
+                tau_key = f"{tau_prefix}{self.target_fpr_key}"
                 for k_str, cinfo in card.get("checkpoint_models", {}).items():
                     k_int = int(k_str)
                     if k_int in self.checkpoints:
-                        self.ckpt_thresholds[k_int] = float(cinfo.get(tau_key, cinfo.get("tau_equal_001", self.threshold)))
+                        self.ckpt_thresholds[k_int] = float(
+                            cinfo.get(tau_key, cinfo.get("tau_equal_001", self.threshold))
+                        )
                         c_onnx = cinfo.get("onnx_int8_path", cinfo.get("onnx_fp32_path", ""))
                         if ort is not None and c_onnx and os.path.exists(c_onnx):
                             try:
@@ -412,8 +426,14 @@ class IPSEngine:
             except Exception:
                 pass
 
-        onnx_path = os.path.join(REPO_DIR, model_rel_path) if not os.path.isabs(model_rel_path) else model_rel_path
-        if ort is not None and os.path.exists(onnx_path):
+        explicit_model = eng_cfg.get("model_path") or sys_cfg.get("model_path")
+        if explicit_model:
+            onnx_path = os.path.join(REPO_DIR, explicit_model) if not os.path.isabs(explicit_model) else explicit_model
+        elif card_global_onnx:
+            onnx_path = os.path.join(REPO_DIR, card_global_onnx) if not os.path.isabs(card_global_onnx) else card_global_onnx
+        else:
+            onnx_path = os.path.join(REPO_DIR, model_rel_path) if not os.path.isabs(model_rel_path) else model_rel_path
+        if ort is not None and onnx_path and os.path.exists(onnx_path):
             try:
                 sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
                 in_shape = sess.get_inputs()[0].shape
@@ -517,8 +537,8 @@ class IPSEngine:
 
         init_ip = ev_dict.get("initiator_ip", ev_dict["ip_a"])
         dev_class = self.ip_to_class.get(init_ip, "global")
-        # If self.threshold was explicitly overridden by caller/test, honour it; else use ckpt_thresholds
-        thresh = self.ckpt_thresholds.get(k_win, self.threshold) if self.threshold == 0.25 else self.threshold
+        # If self.threshold was explicitly overridden after init by caller/test, honour it; else use ckpt_thresholds
+        thresh = self.ckpt_thresholds.get(k_win, self.threshold) if self.threshold == self._loaded_threshold else self.threshold
 
         is_anomaly = bool(score > thresh)
         is_final_checkpoint = (k_win >= self.checkpoints[-1])

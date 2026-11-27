@@ -77,7 +77,7 @@ def extract_matrix_from_df(df: pd.DataFrame, early_n: int = 12) -> Tuple[np.ndar
 
 
 def train_autoencoder(X_train: np.ndarray, X_val: np.ndarray, input_dim: int,
-                      epochs: int = 25, batch_size: int = 64, lr: float = 0.002,
+                      epochs: int = 50, batch_size: int = 64, lr: float = 0.004,
                       seed: int = 42):
     """Train PyTorch Autoencoder with masked MSE loss over positions < valid_len (C1)."""
     if torch is None:
@@ -93,14 +93,15 @@ def train_autoencoder(X_train: np.ndarray, X_val: np.ndarray, input_dim: int,
     x_tr_masked = (X_train.astype(np.float32) * mask_tr)
     x_va_masked = (X_val.astype(np.float32) * mask_va)
 
+    eff_batch = min(batch_size, max(8, len(x_tr_masked) // 8))
     dataset = TensorDataset(torch.from_numpy(x_tr_masked), torch.from_numpy(mask_tr))
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    loader = DataLoader(dataset, batch_size=eff_batch, shuffle=True)
 
     val_t = torch.from_numpy(x_va_masked)
     val_m = torch.from_numpy(mask_va)
     best_loss = float("inf")
     best_weights = None
-    patience = 5
+    patience = max(8, epochs // 4)
     patience_counter = 0
 
     model.train()

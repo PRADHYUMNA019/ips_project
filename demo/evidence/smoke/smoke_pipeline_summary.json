@@ -1,14 +1,14 @@
 {
   "evidence_type": "SYNTHETIC SMOKE (pipeline demonstration only \u2014 NOT A RESULT)",
-  "utc_timestamp": "2026-11-26T06:12:09Z",
+  "utc_timestamp": "2026-11-27T08:47:19Z",
   "seed": 42,
-  "epochs": 8,
-  "run1_elapsed_s": 10.39,
+  "epochs": 50,
+  "run1_elapsed_s": 33.93,
   "run1_summary": {
     "source": "synthetic-smoke",
     "split_check_passed": true,
-    "offline_int8_auroc": 0.3213,
-    "offline_int8_auprc": 0.3245,
+    "offline_int8_auroc": 1.0,
+    "offline_int8_auprc": 1.0,
     "mock_closed_loop": {
       "source": "synthetic-smoke",
       "decisions": [
@@ -16,30 +16,30 @@
           "flow": "attack_exfil_1",
           "pkt": 4,
           "verdict": "DROP",
-          "score": 0.347131
+          "score": 0.229614
         },
         {
           "flow": "benign_sensor_1",
           "pkt": 4,
           "verdict": "CONTINUE",
-          "score": 0.145362
+          "score": 0.012291
         },
         {
           "flow": "benign_sensor_1",
           "pkt": 8,
           "verdict": "CONTINUE",
-          "score": 0.175155
+          "score": 0.001299
         },
         {
           "flow": "benign_sensor_1",
           "pkt": 16,
-          "verdict": "DROP",
-          "score": 2.525898
+          "verdict": "BYPASS",
+          "score": 0.006777
         }
       ],
       "sticky_drop_verdict": "DROP_STICKY",
-      "pkts_dropped_verdict": 18,
-      "pkts_bypassed": 0,
+      "pkts_dropped_verdict": 15,
+      "pkts_bypassed": 3,
       "events_emitted": 4,
       "watchdog_shed_triggered": true,
       "watchdog_action_spike": "WATCHDOG_SHED_ON",
@@ -51,11 +51,11 @@
     "hashes": {
       "smoke_train.csv": "8f9b0eda433c4af7051385e90bda62a90e3e028b5cf90cbacb85e027326cbe33",
       "smoke_calib.csv": "e7cfe48ad799246589defab58eb6fd78d60e45ea3e6b90d2b6916b84c60ccff8",
-      "smoke_test.csv": "217f57959d34895f6e9a1b4cf7e6509770c8821f245a4b763230044846fe76e5",
-      "eval_models.csv": "9a5ab39c897452a33dbf6d959efff4121286f35d0ca53d7c2deaa8704b2d406a",
-      "calibration_curve.csv": "e8856e985469b8b7c6e15ae7d91164c6feba5f0fd5d68bf00c70d7d69466c21b",
-      "progressive_pareto.csv": "f2697ad01bb971d61f51fb45275a8836b55b0b8ed5f08b87479cf7ad62b5c16f",
-      "mock_closed_loop.json": "8df0a9e249f697c835c5970ef35d32f05a5b31ad8a21a4ab7741b4063859a041",
+      "smoke_test.csv": "04bb08d83bb0a4ef7a28e09b991d2a0962c4129751022dffbe7c83955899036d",
+      "eval_models.csv": "665995ba44cda19468d33ed6c13d858e59a63da13652c9646e7d16c5c18541c2",
+      "calibration_curve.csv": "ac038c549a42d62c9ca3ba34433194dc740b9557ce0de4511ce1b392840e1951",
+      "progressive_pareto.csv": "99f4959cbe29d28fcb1cdcd47272b935b85afc8315cb0f572963496ea8ff55ac",
+      "mock_closed_loop.json": "eace9283b96b223a3705e21d2af2aa6c29fe283a94a45d65030bb322c031882e",
       "drift_metrics.csv": "d6a810d13309c3136f68f883018989db72cf62229d3534a5cbaffbfd9cd30245",
       "drift_traces_static_vs_guarded.json": "3954df8e1d10611714b054453b2913c569e687a709188cd32ca9b6ca62ea4d29",
       "evasion_cost_curve.csv": "f9ded79873295791a0bde352602806da9a17bc1ec578759bf6a808f114ba1441"
