@@ -94,7 +94,7 @@ def compute_time_to_verdict_ms(df: pd.DataFrame, early_n: int) -> np.ndarray:
             if col_raw in row and pd.notna(row[col_raw]):
                 s += float(row[col_raw])
             elif col_log in row and pd.notna(row[col_log]):
-                val = float(row[col_log])
+                val = float(row[col_log]) * 7.0
                 if val > 0.0:
                     s += max(0.0, (10.0 ** val - 1.0) / 1000.0)
         if s == 0.0 and "duration_ms" in row and pd.notna(row["duration_ms"]):

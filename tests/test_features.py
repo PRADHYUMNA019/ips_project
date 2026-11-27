@@ -109,13 +109,13 @@ def test_pcap_to_flows_golden_fixture():
         assert row["dir_1"] == 1.0  # WAN -> LAN
         assert row["dir_2"] == 0.0  # LAN -> WAN
 
-        # IAT 0: 200ms = 200,000 us -> log10(1 + 200000) ~ 5.301
-        expected_log_iat0 = math.log10(1.0 + 200000.0)
-        assert pytest.approx(row["log_iat_0"], 0.01) == expected_log_iat0
+        # IAT 0: 200ms = 200,000 us -> log10(1 + 200000) / 7.0 ~ 0.7573
+        expected_log_iat0 = math.log10(1.0 + 200000.0) / 7.0
+        assert pytest.approx(row["log_iat_0"], 0.005) == expected_log_iat0
 
-        # IAT 1: 300ms = 300,000 us -> log10(1 + 300000) ~ 5.477
-        expected_log_iat1 = math.log10(1.0 + 300000.0)
-        assert pytest.approx(row["log_iat_1"], 0.01) == expected_log_iat1
+        # IAT 1: 300ms = 300,000 us -> log10(1 + 300000) / 7.0 ~ 0.7824
+        expected_log_iat1 = math.log10(1.0 + 300000.0) / 7.0
+        assert pytest.approx(row["log_iat_1"], 0.005) == expected_log_iat1
 
     finally:
         if os.path.exists(tmp_pcap):
@@ -202,5 +202,56 @@ def test_direction_asymmetry_and_frac_upstream_b3():
     assert vec2[idx_frac] == pytest.approx(0.75, abs=1e-5)
     assert vec2[idx_bytes_up] == pytest.approx(1500.0 / 15000.0, abs=1e-5)
     assert vec2[idx_bytes_down] == pytest.approx(500.0 / 15000.0, abs=1e-5)
+
+
+def test_feature_group_ranges_and_no_iat_dominance_p9_2c():
+    """
+    Prompt 9 Item 2c:
+      1. Every feature group (sizes, dirs, log_iats, aggregates) stays within [0.0, 1.5]
+         for extreme inputs: 1 us (0.001 ms), 10 s (10,000 ms), and 1 h (3,600,000 ms) gaps.
+      2. On a typical IoT flow vs a shifted flow, no single feature group dominates (>65%)
+         the sum of per-group mean squared differences.
+    """
+    early_n = 8
+    # Extreme gaps: 1 us = 0.001 ms, 10 s = 10_000 ms, 1 h = 3_600_000 ms
+    extreme_iats_ms = [0.001, 10_000.0, 3_600_000.0, 0.001, 10_000.0, 3_600_000.0, 3_600_000.0]
+    extreme_sizes = [1, 1500, 9000, 64, 1500, 1500, 1500, 1500]
+    extreme_dirs = [0, 1, 0, 1, 0, 1, 0, 1]
+
+    vec_ext = build_early_vector(extreme_sizes, extreme_dirs, extreme_iats_ms, early_n=early_n)
+    g_sizes = vec_ext[:early_n]
+    g_dirs = vec_ext[early_n : 2 * early_n]
+    g_iats = vec_ext[2 * early_n : 3 * early_n - 1]
+    g_aggs = vec_ext[3 * early_n - 1 :]
+
+    for g_name, grp in [("sizes", g_sizes), ("dirs", g_dirs), ("log_iats", g_iats), ("aggregates", g_aggs)]:
+        assert float(np.min(grp)) >= 0.0, f"Group {g_name} had negative value: {grp}"
+        assert float(np.max(grp)) <= 1.5 + 1e-6, f"Group {g_name} exceeded 1.5 on extreme inputs: max={np.max(grp):.4f}"
+
+    # Typical flow vs moderately shifted reference flow: check group squared-error balance
+    v_typ = build_early_vector(
+        [200, 450, 180, 600, 220, 500, 190, 480],
+        [0, 1, 0, 1, 0, 1, 0, 1],
+        [150.0] * 7,
+        early_n=early_n,
+    )
+    v_ref = build_early_vector(
+        [800, 950, 780, 1100, 820, 900, 790, 980],
+        [0, 0, 0, 1, 0, 0, 0, 1],
+        [2000.0] * 7,
+        early_n=early_n,
+    )
+    sq = (v_typ - v_ref) ** 2
+    group_mses = {
+        "sizes": float(np.mean(sq[:early_n])),
+        "dirs": float(np.mean(sq[early_n : 2 * early_n])),
+        "log_iats": float(np.mean(sq[2 * early_n : 3 * early_n - 1])),
+        "aggregates": float(np.mean(sq[3 * early_n - 1 :])),
+    }
+    total_group_mse = sum(group_mses.values())
+    for g_name, g_mse in group_mses.items():
+        share = g_mse / total_group_mse
+        assert share < 0.65, f"Feature group '{g_name}' dominated squared error ({share:.1%}): {group_mses}"
+
 
 

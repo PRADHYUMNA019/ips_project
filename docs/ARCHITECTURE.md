@@ -137,11 +137,19 @@ flowchart LR
 
 ---
 
-## 5. Single Source of Truth Schema (`ips/engine/schema.py`)
+## 5. Single Source of Truth Schema (`ips/engine/schema.py` & `ips/features.py`)
 
 To prevent desynchronization between kernel C structs and Python `ctypes` structures, `ips/engine/schema.py` reads `configs/system.yaml` at startup and generates:
 1. Preprocessor macros (`EARLY_N`, `CKPT_0..2`, `NUM_CHECKPOINTS`, `FLOW_IDLE_NS`, `FLOW_MAP_MAX`, `VERDICT_MAP_MAX`, `SCHEMA_VERSION 4`) prepended to `ebpf/ips_engine.c` before BCC compilation.
 2. Matching 8-byte-aligned `ctypes.Structure` classes (`FlowKey`, `VerdictEntry`, `CfgEntry`, `StatsEntry` [72 B], `EarlyFlowEvent`).
+
+### 5.1 Feature Normalisation Choice (`FEATURE_SCHEMA_VERSION = 2`, Prompt 9 Item 2)
+In `ips/features.py::build_early_vector`, per-packet inter-arrival times are normalised via a fixed, stateless log scale:
+$$\text{log\_iat}_i = \min\!\left(1.5,\; \frac{\log_{10}(1 + \text{iat\_us}_i)}{7.0}\right)$$
+matching the aggregate `mean_log_iat / 7.0` (`10^7 µs = 10 s -> 1.0`; `1 h = 3.6×10^9 µs -> 1.365 <= 1.5`), alongside `sizes / 1500.0`, `dirs in {0,1}`, and bounded aggregates in `[0, 1.5]`. We deliberately chose fixed physical scaling (`/ 7.0` + clip `[0, 1.5]`) over train-split `z`-score standardisation because:
+1. **Zero scaler-leakage surface**: No fitted mean/std state can accidentally leak across train/calibration/validation/test or cross-domain splits.
+2. **Stateless online/offline parity**: `IPSEngine.handle_early_flow_event`, `pcap_to_flows.py`, and all dataset adapters call `build_early_vector` directly without carrying external scaler artifacts alongside ONNX models.
+3. **Balanced squared-error contribution**: Previously (`FEATURE_SCHEMA_VERSION = 1`), raw `log10(1 + iat_us)` spanned `[0, ~7.5]` (`~50×` larger squared error than `sizes`), dominating autoencoder MSE. Dividing by `7.0` puts all feature groups on `[0, 1.5]`.
 
 ---
 

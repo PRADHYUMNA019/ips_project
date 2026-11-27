@@ -88,7 +88,7 @@ def test_cesnet_adapter_canonical_schema_and_warning(tmp_path):
     assert pytest.approx(res["size_3"], 0.001) == 80.0 / 1500.0
     assert res["size_4"] == 0.0
     assert res["dir_1"] == 1.0
-    assert pytest.approx(res["log_iat_0"], 0.01) == math.log10(1.0 + 10500.0)
+    assert pytest.approx(res["log_iat_0"], 0.005) == math.log10(1.0 + 10500.0) / 7.0
 
     df = pd.DataFrame([res])
     meta_df, x_mat, feat_cols = split_metadata_and_features(df, early_n=12)

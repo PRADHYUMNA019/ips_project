@@ -185,6 +185,18 @@ MUTATIONS = [
         "desc": "Invert Coefficient of Variation calculation (mean/std instead of std/mean)",
         "should_catch": "tests/test_drift_guard.py::test_periodicity_and_slow_c2_tracker",
     },
+    {
+        "id": "M17",
+        "file": "ips/features.py",
+        "target": "log_iats[i] = min(1.5, v_raw / 7.0)",
+        "replacement": "log_iats[i] = v_raw  # M17: remove IAT /7.0 normalisation",
+        "tests": [
+            "tests/test_features.py::test_feature_group_ranges_and_no_iat_dominance_p9_2c",
+            "tests/test_features.py::test_pcap_to_flows_golden_fixture",
+        ],
+        "desc": "Remove per-packet log-IAT /7.0 normalisation and [0, 1.5] clip",
+        "should_catch": "tests/test_features.py::test_feature_group_ranges_and_no_iat_dominance_p9_2c",
+    },
 ]
 
 

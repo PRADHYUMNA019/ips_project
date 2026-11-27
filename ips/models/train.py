@@ -28,6 +28,7 @@ REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
 
 from ips.features import (
+    FEATURE_SCHEMA_VERSION,
     get_feature_names,
     build_early_vector,
     assert_no_forbidden_features,
@@ -299,6 +300,7 @@ def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 16,
     np.save(anchor_path, X_train[:min(200, len(X_train))])
 
     model_card = {
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "data_source": "synthetic-smoke" if is_smoke else "real",
         "data_sha256": data_hash,
         "early_n": early_n,

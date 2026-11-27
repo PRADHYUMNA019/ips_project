@@ -5,23 +5,27 @@ ips/features.py — Canonical shared feature extraction for early-flow anomaly d
 This module is the SINGLE SOURCE OF TRUTH for early-flow feature extraction,
 shared identically between the offline training pipeline and online eBPF engine.
 
-Features extracted for early-window N payload-bearing packets:
-  - sizes[N]: normalized payload bytes (sz / 1500.0)
-  - dirs[N]: binary direction (0 = LAN->WAN / Client->Server, 1 = WAN->LAN)
-  - log_iats[N-1]: log10(1 + iat_us)
-  - Aggregate statistics:
-      - bytes_up, bytes_down, pkts_up, pkts_down, frac_upstream
-      - mean_log_iat, std_log_iat
-      - first_payload_size
-      - valid_len (actual payload packets observed <= N)
-
-SHORTCUT-LEARNING GUARD:
-  IP addresses, MAC addresses, and Port numbers are strictly EXCLUDED
-  to prevent artificial separation of classes by service port.
+# Features extracted for early-window N payload-bearing packets (FEATURE_SCHEMA_VERSION = 2):
+#   - sizes[N]: normalized payload bytes (min(1500, sz) / 1500.0) in [0, 1]
+#   - dirs[N]: binary direction (0 = LAN->WAN / Client->Server, 1 = WAN->LAN) in {0, 1}
+#   - log_iats[N-1]: min(1.5, log10(1 + iat_us) / 7.0) in [0, 1.5]
+#   - Aggregate statistics (each bounded in [0, 1.5]):
+#       - bytes_up, bytes_down, pkts_up, pkts_down, frac_upstream
+#       - mean_log_iat / 7.0, std_log_iat / 3.0
+#       - first_payload_size
+#       - valid_len (actual payload packets observed / N)
+#
+# SHORTCUT-LEARNING GUARD:
+#   IP addresses, MAC addresses, and Port numbers are strictly EXCLUDED
+#   to prevent artificial separation of classes by service port.
 """
 import math
 from typing import List, Dict, Any, Tuple
 import numpy as np
+
+FEATURE_SCHEMA_VERSION = 2
+LOG_IAT_SCALE = 7.0
+FEATURE_CLIP_MAX = 1.5
 
 FORBIDDEN_COLUMNS = {
     "src_ip", "dst_ip", "src_port", "dst_port", "sport", "dport",
@@ -83,14 +87,14 @@ def build_early_vector(sizes: List[int], dirs: List[int], iat_ms_list: List[floa
     for i in range(valid_len):
         norm_dirs[i] = float(dirs[i])
 
-    # 3. Log-IATs (converted to microseconds: us = ms * 1000)
+    # 3. Log-IATs (converted to microseconds: us = ms * 1000, scaled by /7.0 and clipped to [0, 1.5])
     log_iats = np.zeros(early_n - 1, dtype=np.float32)
     valid_iats = []
     for i in range(min(len(iat_ms_list), early_n - 1)):
         iat_us = max(0.0, float(iat_ms_list[i]) * 1000.0)
-        v = math.log10(1.0 + iat_us)
-        log_iats[i] = v
-        valid_iats.append(v)
+        v_raw = math.log10(1.0 + iat_us)
+        log_iats[i] = min(1.5, v_raw / 7.0)
+        valid_iats.append(v_raw)
 
     # 4. Aggregates
     bytes_up = 0.0
@@ -113,17 +117,17 @@ def build_early_vector(sizes: List[int], dirs: List[int], iat_ms_list: List[floa
     mean_log_iat = float(np.mean(valid_iats)) if valid_iats else 0.0
     std_log_iat = float(np.std(valid_iats)) if valid_iats else 0.0
 
-    first_payload_size = (float(sizes[0]) / 1500.0) if valid_len > 0 else 0.0
+    first_payload_size = (min(1500.0, float(sizes[0])) / 1500.0) if valid_len > 0 else 0.0
     norm_valid_len = float(valid_len) / float(early_n)
 
     aggregates = np.array([
-        bytes_up / 15000.0,
-        bytes_down / 15000.0,
+        min(1.5, bytes_up / 15000.0),
+        min(1.5, bytes_down / 15000.0),
         pkts_up / float(early_n),
         pkts_down / float(early_n),
         frac_upstream,
-        mean_log_iat / 7.0,  # normalized by max log10(10^7 us = 10s)
-        std_log_iat / 3.0,
+        min(1.5, mean_log_iat / 7.0),  # normalized by log10(10^7 us = 10s), clipped at 1.5
+        min(1.5, std_log_iat / 3.0),
         first_payload_size,
         norm_valid_len,
     ], dtype=np.float32)
@@ -178,7 +182,7 @@ def recompute_early_matrix_for_k(df, k: int) -> np.ndarray:
             sizes = [int(round(float(row.get(f"size_{i}", 0.0)) * 1500.0)) for i in range(vlen)]
             dirs = [int(round(float(row.get(f"dir_{i}", 0.0)))) for i in range(vlen)]
             iats_ms = [
-                max(0.0, (10.0 ** float(row.get(f"log_iat_{i}", 0.0)) - 1.0) / 1000.0)
+                max(0.0, (10.0 ** (float(row.get(f"log_iat_{i}", 0.0)) * 7.0) - 1.0) / 1000.0)
                 for i in range(max(0, vlen - 1))
             ]
         else:

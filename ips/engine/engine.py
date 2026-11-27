@@ -466,7 +466,7 @@ class IPSEngine:
             # Deterministic fallback reconstruction when ONNX model file is not present
             recon = np.copy(vec_masked)
             recon[:n_win] = 0.08
-            recon[2 * n_win : 3 * n_win - 1] = 5.4
+            recon[2 * n_win : 3 * n_win - 1] = 5.4 / 7.0
             agg_start = 3 * n_win - 1
             recon[agg_start + 0] = 0.04   # bytes_up
             recon[agg_start + 1] = 0.04   # bytes_down

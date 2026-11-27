@@ -86,7 +86,7 @@ def apply_netem_impairment_to_matrix(
             sizes = [int(round(float(row.get(f"size_{i}", 0.0)) * 1500.0)) for i in range(vlen)]
             dirs = [int(round(float(row.get(f"dir_{i}", 0.0)))) for i in range(vlen)]
             iats_ms = [
-                max(0.0, (10.0 ** float(row.get(f"log_iat_{i}", 0.0)) - 1.0) / 1000.0)
+                max(0.0, (10.0 ** (float(row.get(f"log_iat_{i}", 0.0)) * 7.0) - 1.0) / 1000.0)
                 for i in range(max(0, vlen - 1))
             ]
         else:
