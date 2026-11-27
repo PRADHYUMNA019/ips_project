@@ -20,31 +20,32 @@
   - **Protocols**: `9,972` TCP (86.50%), `1,082` UDP (9.39%), `474` ICMP (4.11%). Top destination ports: `443` (`9,090`), `8443` (`1,922`).
   - **Granularity Limitation (Honest Finding)**: `TQH-C2_features_D.zip` provides flow-level aggregates (`orig_pkts`, `resp_pkts`, `duration`, `ja4`), **not** per-packet early-window arrays (`size_0..N-1`, `dir_0..N-1`, `iat_0..N-2`). Therefore, evaluating the `3N+8` per-packet early-flow autoencoder on TQH-C2 D requires parsing `TQH-C2_pcap_D_merlin_h2.zip` (Prompt 7 on Linux VM).
 
-### 1.2 Beacon Interval, Jitter, Checkpoint Reachability & Slow-C2 Tracker Audit (`demo/evidence/real/tqh_c2_audit.csv`)
+### 1.2 Beacon Interval, Jitter, Upper-Bound Checkpoint Reachability & Slow-C2 Tracker Audit (`demo/evidence/real/tqh_c2_audit.csv`)
 
-Because `TQH-C2_features_D.zip` reports total flow packets (`orig_pkts + resp_pkts`), we estimate payload-bearing packets conservatively as `est_payload_pkts = max(1, total_pkts - 3)` when `total_bytes > 0` (subtracting 3 handshake/teardown packets):
+Because `TQH-C2_features_D.zip` reports flow-level packet totals (`orig_pkts + resp_pkts`) rather than per-packet payload lengths, `est_payload_pkts = max(1, total_pkts - 3)` (for `total_bytes > 0`) is strictly an **upper bound** (a 3-way TCP handshake consumes 3 packets, whereas TLS 1.3 + HTTP/2 SETTINGS/ACK frames consume additional non-application or zero-payload packets). Next to the C2 host pairs, we also measure the **exact same `CV <= 0.35` rule (`min_connections = 8`) on real BENIGN (`y = 0`) `(orig_h, resp_h, resp_p)` host pairs** within each capture (`demo/audit_tqh_c2_real.py`):
 
-| `interval_s` | `jitter_pct` | C2 Flows | Benign Flows | C2 Total Pkts (p50) | C2 Est. Pay >= 4 | C2 Est. Pay >= 8 | C2 Est. Pay >= 16 | C2 Duration p50 (s) | Host Pairs >= 8 Conns | Median Inter-Conn (s) | Median Pair CV | Pairs Flagged (`CV <= 0.35`) |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 30 | 0 | 554 | 676 | 32.0 | 100.0% | 97.47% | 97.29% | 31.02 | 15 | 30.03 | 0.0481 | 15 / 15 |
-| 30 | 30 | 482 | 687 | 32.0 | 100.0% | 96.89% | 96.89% | 31.02 | 15 | 35.08 | 0.0872 | 15 / 15 |
-| 30 | 70 | 411 | 656 | 32.0 | 100.0% | 97.81% | 96.35% | 31.02 | 15 | 39.58 | 0.1571 | 15 / 15 |
-| 300 | 0 | 134 | 550 | 33.0 | 100.0% | 100.00% | 100.00% | 31.03 | 15 | 300.05 | 0.0001 | 15 / 15 |
-| 300 | 30 | 115 | 547 | 33.0 | 100.0% | 100.00% | 99.13% | 31.03 | 10 | 342.94 | 0.0669 | 10 / 10 |
-| 300 | 70 | 99 | 564 | 33.0 | 100.0% | 100.00% | 100.00% | 31.03 | 1 | 345.57 | 0.1173 | 1 / 1 |
-| 1800 | 0 | 36 | 811 | 34.0 | 100.0% | 100.00% | 100.00% | 31.03 | 0 | — | — | 0 / 0 |
-| 1800 | 30 | 35 | 800 | 34.0 | 100.0% | 100.00% | 100.00% | 31.04 | 0 | — | — | 0 / 0 |
-| 1800 | 70 | 27 | 799 | 35.0 | 100.0% | 100.00% | 100.00% | 31.05 | 0 | — | — | 0 / 0 |
-| 3600 | 0 | 24 | 1151 | 50.5 | 100.0% | 100.00% | 100.00% | 31.05 | 0 | — | — | 0 / 0 |
-| 3600 | 30 | 24 | 1152 | 50.5 | 100.0% | 100.00% | 100.00% | 31.06 | 0 | — | — | 0 / 0 |
-| 3600 | 70 | 23 | 1171 | 61.0 | 100.0% | 100.00% | 100.00% | 31.07 | 0 | — | — | 0 / 0 |
+| `interval_s` | `jitter_pct` | C2 / Benign Flows | C2 Total Pkts (p50) | C2 Est. Pay `>= 4 / 8 / 16` *(Upper Bound)* | C2 Pairs `>=8` | C2 Med. CV | C2 Flagged (`CV<=0.35`) | **Benign Pairs `>=8`** | **Benign Med. CV (Min)** | **Benign Flagged (`CV<=0.35`)** |
+|---:|---:|---|---:|---|---:|---:|---:|---:|---|---:|
+| 30 | 0 | 554 / 676 | 32.0 | 100.0 / 97.5 / 97.3% | 15 | 0.0496 | 15 / 15 | 5 | 0.6834 (0.3957) | **0 / 5** |
+| 30 | 30 | 482 / 687 | 32.0 | 100.0 / 96.9 / 96.9% | 15 | 0.0872 | 15 / 15 | 7 | 0.8599 (0.6559) | **0 / 7** |
+| 30 | 70 | 411 / 656 | 32.0 | 100.0 / 97.8 / 96.4% | 15 | 0.1571 | 15 / 15 | 7 | 0.8041 (0.5801) | **0 / 7** |
+| 300 | 0 | 134 / 550 | 33.0 | 100.0 / 100.0 / 100.0% | 15 | 0.0001 | 15 / 15 | 4 | 0.6424 (0.6162) | **0 / 4** |
+| 300 | 30 | 115 / 547 | 33.0 | 100.0 / 100.0 / 99.1% | 10 | 0.0669 | 10 / 10 | 3 | 0.6861 (0.4679) | **0 / 3** |
+| 300 | 70 | 99 / 564 | 33.0 | 100.0 / 100.0 / 100.0% | 1 | 0.1173 | 1 / 1 | 5 | 0.7002 (0.5281) | **0 / 5** |
+| 1800 | 0 | 36 / 811 | 34.0 | 100.0 / 100.0 / 100.0% | 0 | — | 0 / 0 | 15 | 0.7383 (0.4139) | **0 / 15** |
+| 1800 | 30 | 35 / 800 | 34.0 | 100.0 / 100.0 / 100.0% | 0 | — | 0 / 0 | 10 | 0.6615 (0.4552) | **0 / 10** |
+| 1800 | 70 | 27 / 799 | 35.0 | 100.0 / 100.0 / 100.0% | 0 | — | 0 / 0 | 13 | 0.7237 (0.4703) | **0 / 13** |
+| 3600 | 0 | 24 / 1,151 | 50.5 | 100.0 / 100.0 / 100.0% | 0 | — | 0 / 0 | 19 | 0.9561 (0.5400) | **0 / 19** |
+| 3600 | 30 | 24 / 1,152 | 50.5 | 100.0 / 100.0 / 100.0% | 0 | — | 0 / 0 | 31 | 0.9313 (0.5711) | **0 / 31** |
+| 3600 | 70 | 23 / 1,171 | 61.0 | 100.0 / 100.0 / 100.0% | 0 | — | 0 / 0 | 38 | 0.8441 (0.3879) | **0 / 38** |
+| **Totals** | — | **1,964 / 9,564** | — | **100.0 / 98.1 / 97.7%** | **71** | — | **71 / 71** | **157** | — | **0 / 157 (0.00%)** |
 
 ### 1.3 Plain-Language Implications for Our Architecture
-1. **Implication for Tier-1 Early-Window Detector (`checkpoints = [4, 8, 16]`)**: Contrary to naive assumptions that slow C2 beacons only send 1–2 packets per connection, real Merlin HTTP/2-over-TLS C2 establishes a full TLS 1.3 + HTTP/2 session per check-in (median 33 total packets, median flow duration **31.02 s**, well inside `flow_idle_s = 120 s`). Across all 1,964 C2 flows, **100.0%** reach an estimated ≥ 4 payload packets, **98.1%** reach ≥ 8, and **97.7%** reach ≥ 16. Thus, **a single C2 check-in connection DOES reach all three early checkpoints within ~31 s**.
-2. **Implication for Tier-2 Slow-C2 Periodicity Tracker (`SlowC2Tracker`, `min_connections = 8`, `CV <= 0.35`)**:
-   - For 30 s beacons (even at 70% jitter!), **15/15** victim host pairs reach ≥ 8 connections during the capture cell and **100% (15/15)** are flagged (`median CV = 0.048–0.157 <= 0.35`).
-   - For 300 s beacons, 8 connections require ~40 minutes; 15/15 (`j=0%`), 10/15 (`j=30%`), and 1/15 (`j=70%`) reach 8 connections within the cell duration (all that do are flagged).
-   - For **1,800 s (30 min)** and **3,600 s (1 hour)** beacons, **0/15** host pairs reach 8 connections within a ~1–2 hour capture window (8 × 3,600 s = 8 hours!). Therefore, **Tier-2 periodicity tracking alone is blind to ultra-slow beacons over short windows** and requires multi-hour/multi-day state retention, making Tier-1 per-flow early-window inspection essential for first-connection detection.
+1. **Implication for Tier-1 Early-Window Detector (`checkpoints = [4, 8, 16]`)**: Real Merlin HTTP/2-over-TLS C2 establishes a full TLS 1.3 + HTTP/2 session per check-in (median 33 total packets, median flow duration **31.02 s**, inside `flow_idle_s = 120 s`). Across all 1,964 C2 flows, **100.0% / 98.1% / 97.7% are ESTIMATED to reach `k = 4 / 8 / 16` payload packets (upper bound: payload packets estimated as `total_pkts - 3`; TLS handshakes and pure ACKs consume more, so exact payload-packet reachability must be verified on the 1.82 GB raw pcap in Prompt 7)**.
+2. **Implication for Tier-2 Slow-C2 Periodicity Tracker (`SlowC2Tracker`, `min_connections = 8`, `CV <= 0.35`) & Why Benign Baseline Matters**:
+   - Reporting *"15/15 C2 pairs flagged"* (`71/71` across all cells with `>= 8` connections) is **meaningless without the false-positive rate on benign host pairs** — a trivial rule like `CV <= 10` would also flag `15/15` C2 pairs while flagging every benign host pair.
+   - Across all **9,564 real benign background flows** in Testbed D, **157 `(orig_h, resp_h, resp_p)` benign host pairs** accumulate `>= 8` connections, with median CVs in **`0.642–0.956`** (minimum CV = `0.3879`), and **`0 / 157` (`0.00%`, 95% Clopper-Pearson upper bound `[0.00%, 2.32%]`)** are flagged by either `CV <= 0.35` or the full `SlowC2Tracker` (`CV <= 0.35` or spectral peak). Caveat: Testbed D's benign background simulates aperiodic user/enterprise browsing; fixed-timer IoT cron/NTP/heartbeat services on real home networks could exhibit `CV <= 0.35` and must be evaluated on our IoT testbed in Prompt 7.
+   - For **1,800 s (30 min)** and **3,600 s (1 hour)** beacons, **0/15** C2 host pairs reach 8 connections within a ~1–2 hour capture window (8 × 3,600 s = 8 hours). Thus Tier-2 periodicity tracking alone is blind to ultra-slow beacons over short windows.
 
 ---
 

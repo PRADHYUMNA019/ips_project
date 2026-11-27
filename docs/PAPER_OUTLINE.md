@@ -34,7 +34,7 @@
 - Strict **Leave-One-Attack-Family-Out (LOFO)** zero-day protocol (`ips/data/build_splits.py`): benign-only training/calibration, DEV families (`A1, A2, A5`) for tuning/canary, held-out zero-day families (`A3_c2, A4_exfil`) evaluated strictly once.
 
 ### §3. System Architecture: Progressive XDP Fast Path & Verdict Cache (`C1`, `docs/ARCHITECTURE.md`)
-- Bidirectional XDP attachment on `v-lan-gw` and `v-wan-gw` (`ebpf/ips_engine.c`, `SCHEMA_VERSION 3`).
+- Bidirectional XDP attachment on `v-lan-gw` and `v-wan-gw` (`ebpf/ips_engine.c`, `SCHEMA_VERSION 4`).
 - Progressive checkpoint ring-buffer emission (`emitted_mask`, `checkpoint_idx` at $N \in \{4, 8, 16\}$) and **"early drop, late bypass"** state machine in `ips/engine/engine.py`.
 - Flow-level FPR budget allocation ($\alpha = \sum_k \alpha_k$: equal vs front-loaded $\alpha_k \propto 2^{-k}$) and empirical union-bound correlation measurement.
 - Tier-0 per-source SYN token bucket guard (explicitly rule-based, not ML) and 1 Hz user-space Watchdog / Load Shedder (`cfg.shed`).
@@ -47,8 +47,8 @@
 ### §5. Experimental Evaluation, Cross-Domain Transfer & Methodological Ablations (`C4`)
 - **§5.1 Zero-Day LOFO Detection & Progressive Checkpoint Pareto (`C1`)**: `eval_models.csv`, `eval_families_lofo.csv`, `progressive_pareto.csv`, `eval_n_sweep.csv` ($\ge 3$ seeds with 95% CIs).
 - **§5.2 Inline Enforcement, Fast-Path Bypass & Operational-Harm Metrics (`C1, C10/N10`)**: `ips/eval/harness.py` reporting attack-packet leakage alongside expected dropped benign flows per device-day, fleet-day, and recovery time.
-- **§5.3 Concept Drift (`S1–S5`), CESNET Multi-Week Natural Drift (`B5`), & Adaptive Cost-of-Evasion Curve (`C2, C3`)**: `drift_metrics.csv`, `cesnet_natural_drift.csv` (using `G1/G3/G4` + EVT only; `G2` disabled), and `evasion_cost_curve.csv` / `evasion_cost_curve.png`.
-- **§5.4 Cross-Domain Benign Generalisation (`Testbed <-> IoT-23`, `C4 / B6`)**: `ips/eval/cross_domain.py` forward and reverse transfer without retuning.
+- **§5.3 Concept Drift (`S1–S5`), CESNET Multi-Week Natural Drift (`B5`), & Adaptive Cost-of-Evasion Curve (`C2, C3`)**: `drift_metrics.csv`, `cesnet_natural_drift.csv` (using `G1/G3/G4` + EVT only; `G2` disabled), and `evasion_cost_curve.csv` / `evasion_cost_curve.png`, always pairing `SlowC2Tracker` C2 host-pair detection rates with the benign host-pair false-positive baseline (`CV <= 0.35`, `>= 8` connections; note Zeek summary `total_pkts - 3` reachability is strictly an upper bound until raw pcaps are parsed).
+- **§5.4 Cross-Domain Benign Generalisation (`Testbed <-> IoT-23`, `C4 / B6`)**: `ips/eval/cross_domain.py` forward and reverse transfer without retuning (noting cross-device IoT-23 captures are benign-only domain-shift diagnostics with ~69%–73% UDP traffic and fixed capture splits where seeds vary model initialisation only).
 - **§5.5 Split-Conformal vs EVT Tail Calibration (`C9/N9`)**: `ips/models/evt.py` & `calibration_curve.csv` across $\alpha \in \{10^{-1}, 10^{-2}, 10^{-3}, 10^{-4}\}$, marking the finite-sample conformal floor $\alpha = 1/(n+1)$.
 - **§5.6 Network-Impairment Robustness (`C11/N11`)**: `scripts/netem_sweep.sh` & `ips/eval/impairment.py` across delay/jitter/loss/reordering with `full_features`, `no_iat_features`, and `no_size_features` ablations.
 - **§5.7 Training-Set Contamination & Trimmed-Loss Mitigation (`C12/N12`)**: `ips/eval/contamination.py` mixing $c \in \{0\%, 0.5\%, 1\%, 2\%, 5\%\}$ DEV-family attacks into training data.

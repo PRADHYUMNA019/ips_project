@@ -47,19 +47,20 @@ Show the 5 figures under [`demo/figures/smoke/`](../demo/figures/smoke/) and exp
 ## 5. Real Public Dataset Audit: TQH-C2 D & IoT-23 Benign (~1.5 minutes)
 Open [`docs/DATASET_AUDIT.md`](DATASET_AUDIT.md), [`demo/evidence/real/tqh_c2_audit.csv`](../demo/evidence/real/tqh_c2_audit.csv), and [`demo/evidence/real/iot23_benign_audit.csv`](../demo/evidence/real/iot23_benign_audit.csv) (`REAL PUBLIC DATA`):
 - **TQH-C2 Testbed D (Zenodo `21523144`, CC-BY-4.0, SHA-256 verified, 11,528 rows: 9,564 benign / 1,964 `malicious_c2`)**:
-  - Real Merlin HTTP/2-over-TLS C2 flows average **33 total packets** and **31.02 s** duration: **100.0% / 98.1% / 97.7%** reach estimated `k=4 / 8 / 16` payload packets (well inside `flow_idle_s=120 s`).
-  - Conversely, our Tier-2 `SlowC2Tracker` (`min_connections=8, CV<=0.35`) catches **15/15** host pairs at 30 s (even at 70% jitter, `CV=0.157`), **26/26** reaching 8 connections at 300 s, and **0/15** at 1,800–3,600 s within the capture window (because 8 hourly beacons take 8 hours!).
+  - Real Merlin HTTP/2-over-TLS C2 flows average **33 total packets** and **31.02 s** duration: **100.0% / 98.1% / 97.7%** are **estimated** to reach `k=4 / 8 / 16` payload packets (**upper bound**: payload packets estimated as `total_pkts - 3`; TLS handshakes consume more).
+  - Our Tier-2 `SlowC2Tracker` (`min_connections=8, CV<=0.35`) flags **71/71** C2 host pairs that reach ≥8 connections (`15/15` at 30 s even at 70% jitter, `26/26` at 300 s, `0/15` reaching 8 connections at 1,800–3,600 s within ~1–2 h) alongside **`0/157` (`0.00%`) real benign host pairs flagged** (`min CV = 0.388`; reporting `"15/15 flagged"` without the benign host-pair false-positive baseline would be meaningless).
   - **Honest schema finding**: `TQH-C2_features_D.zip` has Zeek flow summaries only, not per-packet sequences — per-packet `3N+8` evaluation requires the 1.82 GB raw pcap in the Linux VM phase.
-- **Aposemat IoT-23 Benign Pcaps (8 real pcaps, 513 MB streamed via `dpkt`, 1,254 flows)**:
-  - `4-1` Philips Hue (353 flows, 0.28% TLS), `5-1` Amazon Echo (761 flows, 15.9% TLS), `7-1` Somfy Door Lock (140 flows, 12.1% TLS).
-  - Only **6.54%** of real IoT-23 benign flows reach `k=16`, while **22.01%** reach `k=4` (and **94.29%** on Somfy at median `30.2 ms`) — directly justifying progressive checkpoints over fixed `N=16`.
+- **Aposemat IoT-23 Benign Pcaps (8 real pcaps, 513 MB streamed via `dpkt` with `flow_idle_s=120 s`, 1,447 flows)**:
+  - `4-1` Philips Hue (353 flows, 0.28% TLS), `5-1` Amazon Echo (844 flows, 16.2% TLS), `7-1` Somfy Door Lock (250 flows, 3.6% TLS).
+  - **Motivates progressive early exit**: only **6.01%** of these (mostly UDP — **72.7%** after `120 s` split; `69.0%` pre-split) flows reach `k=16`, while **30.20%** reach `k=4` (and **100.0%** on Somfy at median `18.5 ms`).
 
 ---
 
-## 6. Exploratory Real IoT-23 Cross-Device Transfer (~45 seconds)
-Open [`docs/EXPLORATORY_P8.md`](EXPLORATORY_P8.md) and [`demo/evidence/real/exploratory_results.csv`](../demo/evidence/real/exploratory_results.csv) (`REAL PUBLIC DATA — EXPLORATORY ONLY`):
-- Training on Echo (`5-1`) and calibrating on Hue (`4-1`) yields **94.5%–94.8% FPR** on Somfy (`7-1`) (`KS = 0.921–0.928`), while calibrating on Somfy yields **0.28%–0.57% FPR** on Hue (`KS = 0.921–0.928`).
-- Per-feature diagnostics pinpoint why: unscaled `log_iat_i` (`[0, ~7]`) squared errors (`±4` to `±10.9`) dominate `[0, 1]` sizes/dirs across heterogeneous hardware. This directly motivates per-device-class calibration and feature-group scaling in the upcoming Linux VM phase.
+## 6. Exploratory Real IoT-23 Domain-Shift Diagnostic (~45 seconds)
+Open [`docs/EXPLORATORY_P8.md`](EXPLORATORY_P8.md) and [`demo/evidence/real/exploratory_results.csv`](../demo/evidence/real/exploratory_results.csv) (`REAL PUBLIC DATA — DOMAIN-SHIFT DIAGNOSTIC, NOT A DETECTION RESULT`):
+- Setup caveat: **benign-only cross-device transfer** (not attack detection), **fixed capture split** (seeds `{42, 43, 44}` vary model initialisation only), and **69.0%–72.7% UDP** flows.
+- After normalising `log_iat` by `/ 7.0` and applying the kernel-matching `120 s` idle split, `Echo(5-1) -> Hue(4-1) calib -> Somfy(7-1) test` `FPR@EVT0.05` dropped from `0.945–0.948` to **`0.156–0.204`** (`FPR@EVT0.01`: `0.0053–0.1840`), while `Echo -> Somfy calib -> Hue test` rose from `0.003–0.006` to **`0.035–0.095`** (`KS = 0.83–0.84`).
+- Residual shift is consistent with / likely due to genuine cross-device protocol and direction-pattern differences (`dir_1..3`, `std_log_iat`), motivating per-device-class calibration (`N5`) in Prompt 7.
 
 ---
 
@@ -90,7 +91,7 @@ Open [`demo/evidence/CLAIMS_VS_EVIDENCE.md`](../demo/evidence/CLAIMS_VS_EVIDENCE
 3. **What is actually novel, and how will you prove it?**
    - Four focused claims (`C1–C4`): progressive `[4, 8, 16]` XDP early-drop/late-bypass with flow-level $\alpha$-spending (`C1`), poisoning-aware 4-gate drift guard with honest `S4` boundary (`C2`), two-tier detection + white-box $Q=200$ cost-of-evasion curve (`C3`), and real cross-domain + operational-harm + split-conformal-vs-EVT evaluation (`C4`). Novelty is **not yet claimed established** — it will be tested against pre-registered hypotheses on real Linux/testbed/public data in Prompt 7 and verified against literature in `docs/related_work_todo.md`.
 4. **What happens if early-window detection fails on slow C2 beacons?**
-   - Our real TQH-C2 D audit showed two regimes: Merlin HTTP/2-over-TLS connections actually carry ~33 packets in ~31 s (so 97.7%–100% DO reach checkpoints 4/8/16), whereas ultra-slow 1-packet or mimicry beacons that evade Tier-1 are handed to the Tier-2 host-pair `SlowC2Tracker`. And our audit honestly revealed Tier-2's own blind spot: 1,800–3,600 s beacons need 4–8 hours to accumulate 8 connections.
+   - Our real TQH-C2 D audit showed two regimes: Merlin HTTP/2-over-TLS connections carry ~33 total packets in ~31 s (`97.7%–100%` are **estimated** as an upper bound `total_pkts - 3` to reach checkpoints 4/8/16; TLS handshakes consume more), whereas ultra-slow 1-packet or mimicry beacons that evade Tier-1 are handed to the Tier-2 host-pair `SlowC2Tracker` (`71/71` C2 pairs >=8 conns flagged vs `0/157` benign host pairs flagged on Testbed D, while `0/15` C2 pairs reach 8 connections within 1–2 h at 1,800–3,600 s intervals).
 5. **Why are public datasets used offline only (no pcap replay through the gateway)?**
    - Replaying recorded public pcaps breaks closed-loop TCP/TLS state (retransmissions, congestion control, TLS handshakes cannot react to an inline `XDP_DROP`). Public datasets are therefore strictly offline-only (`Rule H5`), while inline closed-loop prevention is evaluated on live TLS traffic in our Linux namespace testbed.
 6. **What does the remaining 20% (after Prompt 7's 80% milestone) cover?**
