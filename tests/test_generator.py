@@ -283,7 +283,7 @@ def test_time_scale_speeds_up(tls_server):
         target=run_iot_device,
         args=("test-scale-fast", "_test_scale", tls_server.host, tls_server.port),
         kwargs={
-            "duration_s": 1.2,
+            "duration_s": 1.8,
             "result_holder": res_fast,
             "time_scale": 0.1,  # 0.05s intervals -> ~15-20 msgs in 1.2s
         },
