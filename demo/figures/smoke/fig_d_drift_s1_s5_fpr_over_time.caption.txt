@@ -1,2 +1,2 @@
 SYNTHETIC SMOKE DATA — NOT A RESULT
-Figure (d): Clean benign FPR across windows 0..15 for drift scenarios S1-S5 comparing static thresholds against the PoisoningAwareDriftGuard (G1-G4 + bounded step + rollback) on synthetic smoke streams.
+Figure (d): Drift & poisoning scenarios S1-S5 across windows 0..15 on synthetic smoke streams. Panels S1 & S2 plot Clean Benign FPR (Static spikes after benign shift while Guarded adapts); Panels S3 & S4 plot Held-Out Attack TPR (Unguarded ADWIN accepts poisoned updates and loses detection, whereas Guarded G1-G4 rejects S3 and bounds S4); Panel S5 plots Concurrent Mimicry/Slow-C2 Detection Rate (Tier-2 SlowC2Tracker fires once >=8 periodic connections accumulate at window 7).

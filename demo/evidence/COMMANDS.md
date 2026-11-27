@@ -76,3 +76,33 @@
 - **Final unit test verification (after all P8 edits)**:
   - Command: `python -m pytest -q`
   - Output: `69 passed, 18 warnings` (exit code `0`)
+
+---
+
+## Prompt 9 — Review Fixes & Re-Verification (`branch p9-fixes`)
+
+- **Branch creation from `p8-demo` (`31da19b`)**:
+  - Command: `git checkout -b p9-fixes`
+  - Output: `Switched to a new branch 'p9-fixes'`
+- **Item 1 (`P9.1:`) — RED → GREEN tests & smoke determinism (`SYNTHETIC SMOKE` / `UNIT TEST`)**:
+  - RED: `python -m pytest tests/test_models.py -k p9_1d -v ; python -m pytest tests/test_engine_closed_loop.py -k p9_1e -v` → `2 failed` (`score_onnx_model` unmasked mismatch `0.0305 vs 0.0884`; `IPSEngine` ignoring `model_card`).
+  - GREEN + determinism: `python demo/run_smoke_pipeline.py --check-determinism` → `[DETERMINISM CHECK] 10/10 deterministic artefacts byte-for-byte IDENTICAL.` (`offline_int8_auroc`: `0.3213 -> 1.0`, `benign_sensor_1`: `BYPASS`).
+- **Item 2 (`P9.2:`) — Per-packet `log_iat / 7.0` normalisation, `M17` mutant & exploratory re-run**:
+  - RED → GREEN: `python -m pytest tests/test_features.py -k p9_2c -v` → `FAILED (max=9.5563 > 1.5)` before fix; `PASSED` after fix.
+  - Mutation suite: `python audit/mutation_runner.py` → `Total: 18 | KILLED: 18 | SURVIVED: 0 | BASELINE FAILS: 0 | INVALID: 0` (`M17` KILLED).
+  - Exploratory re-run: `python demo/run_exploratory_p8.py` → `Hue->Somfy` `k=4` FPR@0.05 `0.9476 -> 0.0572` (`k=8,16`: `0.6214, 0.6738`).
+- **Item 3 (`P9.3:`) — Offline extractor `flow_idle_s = 120 s` & `FIN/RST + SYN` lifecycle parity**:
+  - RED → GREEN: `python -m pytest tests/test_features.py -k p9_3b -v` → `FAILED (got 1 flow for 121s gap)` before fix; `PASSED` after fix.
+  - Real IoT-23 re-audit: `python demo/audit_iot23_real.py` → `1,447` flows (`4-1`: `353`, `5-1`: `844`, `7-1`: `250`); Somfy `ttv_k8_p95_ms`: `43,901,593.91 -> 54,766.80`; Hue `ttv_k4_p95_ms`: `8,679,347.33 -> 212.11`.
+  - Post-split exploratory run: `python demo/run_exploratory_p8.py` → `Hue->Somfy` FPR@0.05 `0.1560 / 0.1747 / 0.2040`; `Somfy->Hue` FPR@0.05 `0.0718 / 0.0953 / 0.0349`.
+- **Item 4 (`P9.4:`) — Real TQH-C2 D benign host-pair CV baseline & claims audit**:
+  - Command: `python demo/audit_tqh_c2_real.py`
+  - Output: `[TOTALS] C2 pairs >=8 conns: 71/71 flagged (CV<=0.35) | Benign pairs >=8 conns: 0/157 flagged by CV<=0.35 (0/157 by full SlowC2Tracker)`
+- **Item 5 & Final Gate (`P9.5:`) — Informative Figure D, PNG/SVG diagrams, determinism & full demo runner**:
+  - Diagram export: `python demo/render_architecture_diagrams.py` → `[+] Rendered 4 PNG + 4 SVG architecture diagrams into demo/figures/diagrams`
+  - Final verification suite:
+    - `python -m pytest -q` → `73 passed`
+    - `python audit/check_claims.py` → `0` forbidden phrases, `3/3` titles identical
+    - `python audit/mutation_runner.py` → `Total: 18 | KILLED: 18 | SURVIVED: 0 | BASELINE FAILS: 0 | INVALID: 0`
+    - `python demo/run_smoke_pipeline.py --check-determinism` → `10/10 deterministic artefacts byte-for-byte IDENTICAL`
+    - `powershell -ExecutionPolicy Bypass -File demo\run_demo.ps1` → `OVERALL: PASS`

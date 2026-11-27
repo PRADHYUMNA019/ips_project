@@ -1,6 +1,6 @@
 # System Architecture (`docs/ARCHITECTURE.md`)
 
-> **Rendering Note**: `mmdc` (Mermaid CLI) is not installed on the current Windows host, so diagrams are stored as native Mermaid source blocks below. Render them directly on GitHub, in VS Code (Markdown Preview Mermaid Support), or export PNG/SVG with `npx @mermaid-js/mermaid-cli -i docs/ARCHITECTURE.md -o demo/figures/diagrams/arch.png`.
+> **Rendering Note**: Native Mermaid source blocks below render directly on GitHub and in VS Code. Because `@mermaid-js/mermaid-cli` (`mmdc`) and Graphviz (`dot`) are not installed locally on this Windows host, crisp static **PNG and SVG** versions of all 4 diagrams are also exported deterministically via [`demo/render_architecture_diagrams.py`](../demo/render_architecture_diagrams.py) under [`demo/figures/diagrams/`](../demo/figures/diagrams/) (`01_two_tier_overview.{png,svg}` .. `04_splits_and_leakage.{png,svg}`).
 > **Verification Status**: Kernel C code (`ebpf/ips_engine.c`) is `CODE WRITTEN, NOT COMPILED, NOT RUN (V2)` on Linux. Python mirrors and offline modules are `UNIT TEST` verified (V1).
 
 ---

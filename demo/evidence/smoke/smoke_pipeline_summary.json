@@ -1,9 +1,9 @@
 {
   "evidence_type": "SYNTHETIC SMOKE (pipeline demonstration only \u2014 NOT A RESULT)",
-  "utc_timestamp": "2026-11-27T08:59:32Z",
+  "utc_timestamp": "2026-11-27T09:29:39Z",
   "seed": 42,
   "epochs": 50,
-  "run1_elapsed_s": 28.91,
+  "run1_elapsed_s": 14.96,
   "run1_summary": {
     "source": "synthetic-smoke",
     "split_check_passed": true,
@@ -56,26 +56,9 @@
       "calibration_curve.csv": "fcf881a90e2ebd87c9c00cb08d34b221724bc370b78347c6e11b387109d4032e",
       "progressive_pareto.csv": "edff222ef0c2ec5d3c75b12c2db3d4127870d251be8e6d88597d24e922ed257a",
       "mock_closed_loop.json": "91cb41bde653a68c049fee14d8c35a052ada564a9f2307a7f90c212f827a3447",
-      "drift_metrics.csv": "d6a810d13309c3136f68f883018989db72cf62229d3534a5cbaffbfd9cd30245",
-      "drift_traces_static_vs_guarded.json": "3954df8e1d10611714b054453b2913c569e687a709188cd32ca9b6ca62ea4d29",
+      "drift_metrics.csv": "6b72a80e9ac4ff1cdfde7db1c6117ea5d90b34a19a5146a5d36136995825477a",
+      "drift_traces_static_vs_guarded.json": "b3fb84d6db37206f19721fcb99ad9e27089b1a1840c82edd669d12ebbcbd6f12",
       "evasion_cost_curve.csv": "b021dfa6e0344f9ff0e9909f84d1d6ea9c777897da7e191f23e83009092a70dc"
-    }
-  },
-  "determinism_check": {
-    "total_files": 10,
-    "identical_files": 10,
-    "all_identical": true,
-    "per_file": {
-      "smoke_train.csv": "IDENTICAL",
-      "smoke_calib.csv": "IDENTICAL",
-      "smoke_test.csv": "IDENTICAL",
-      "eval_models.csv": "IDENTICAL",
-      "calibration_curve.csv": "IDENTICAL",
-      "progressive_pareto.csv": "IDENTICAL",
-      "mock_closed_loop.json": "IDENTICAL",
-      "drift_metrics.csv": "IDENTICAL",
-      "drift_traces_static_vs_guarded.json": "IDENTICAL",
-      "evasion_cost_curve.csv": "IDENTICAL"
     }
   }
 }

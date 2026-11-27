@@ -19,7 +19,7 @@ $env:MKL_NUM_THREADS = "4"
 $env:PYTHONIOENCODING = "utf-8"
 
 Write-Host "========================================================================" -ForegroundColor Cyan
-Write-Host "  IPS Project — Windows Guide-Review Demo (Prompt 8)" -ForegroundColor Cyan
+Write-Host "  IPS Project -- Windows Guide-Review Demo (Prompt 8/9)" -ForegroundColor Cyan
 Write-Host "  Repo: $RepoRoot" -ForegroundColor Cyan
 Write-Host "  Scope: UNIT TEST + SYNTHETIC SMOKE ONLY (No Linux/kernel/testbed run)" -ForegroundColor Yellow
 Write-Host "========================================================================" -ForegroundColor Cyan
@@ -81,6 +81,6 @@ if ($AnyFail) {
     Write-Host "OVERALL: FAIL" -ForegroundColor Red
     exit 1
 } else {
-    Write-Host "OVERALL: PASS (UNIT TEST + SYNTHETIC SMOKE ONLY — No Linux/kernel/real-testbed result)" -ForegroundColor Green
+    Write-Host "OVERALL: PASS (UNIT TEST + SYNTHETIC SMOKE ONLY -- No Linux/kernel/real-testbed result)" -ForegroundColor Green
     exit 0
 }

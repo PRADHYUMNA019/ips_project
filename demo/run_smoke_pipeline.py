@@ -320,29 +320,34 @@ def generate_smoke_figures(
             "thresholds on synthetic smoke data (0 achieved FPR floored at 1e-5 for log plotting).\n"
         )
 
-    # (d) Drift scenarios S1-S5 FPR over time (static vs guarded)
-    scen_order = [
-        ("S1_benign_firmware_step", "S1: Benign Step"),
-        ("S2_benign_gradual_ramp", "S2: Benign Ramp"),
-        ("S3_single_device_boiling_frog", "S3: Boiling Frog"),
-        ("S4_coordinated_multi_device_poisoning", "S4: Coord. Poison"),
-        ("S5_mimicry_and_slow_c2", "S5: Mimicry/C2"),
+    # (d) Drift scenarios S1-S5: S1/S2 show Clean Benign FPR; S3/S4/S5 show Attack Detection TPR (Prompt 9 Item 5a)
+    scen_specs = [
+        ("S1_benign_firmware_step", "S1: Benign Step\n(Clean Benign FPR ↓)", "clean_benign_fpr", "Clean Benign FPR"),
+        ("S2_benign_gradual_ramp", "S2: Benign Ramp\n(Clean Benign FPR ↓)", "clean_benign_fpr", "Clean Benign FPR"),
+        ("S3_single_device_boiling_frog", "S3: Boiling Frog\n(Attack TPR ↑)", "attack_tpr", "Held-Out Attack TPR"),
+        ("S4_coordinated_multi_device_poisoning", "S4: Coord. Poison\n(Attack TPR ↑)", "attack_tpr", "Held-Out Attack TPR"),
+        ("S5_mimicry_and_slow_c2", "S5: Mimicry + Slow C2\n(Concurrent C2 TPR ↑)", "attack_tpr", "Concurrent Attack TPR"),
     ]
-    fig, axes = plt.subplots(1, 5, figsize=(15.5, 3.8), sharey=True)
-    for ax, (skey, stitle) in zip(axes, scen_order):
+    fig, axes = plt.subplots(1, 5, figsize=(16.5, 4.1), sharey=False)
+    for idx, (ax, (skey, stitle, mkey, ylabel)) in enumerate(zip(axes, scen_specs)):
         tr_st = drift_traces[skey]["static"]
+        tr_ad = drift_traces[skey]["plain_adwin_retrain"]
         tr_gd = drift_traces[skey]["guarded"]
         ws = [r["window"] for r in tr_st]
-        f_st = [r["clean_benign_fpr"] for r in tr_st]
-        f_gd = [r["clean_benign_fpr"] for r in tr_gd]
-        ax.plot(ws, f_st, "s--", color=PALETTE["vermillion"], lw=1.8, markersize=4, label="Static")
-        ax.plot(ws, f_gd, "o-", color=PALETTE["blue"], lw=2.0, markersize=4, label="Guarded (G1–G4)")
+        v_st = [r[mkey] for r in tr_st]
+        v_ad = [r[mkey] for r in tr_ad]
+        v_gd = [r[mkey] for r in tr_gd]
+        ax.plot(ws, v_st, "s--", color=PALETTE["vermillion"], lw=1.7, markersize=3.8, label="Static (Tier-1)")
+        if skey != "S5_mimicry_and_slow_c2":
+            ax.plot(ws, v_ad, "^:", color=PALETTE["orange"], lw=1.8, markersize=3.8, label="Unguarded ADWIN")
+        ax.plot(ws, v_gd, "o-", color=PALETTE["blue"], lw=2.1, markersize=4.0, label="Guarded (G1–G4 + Tier-2)")
         ax.set_title(stitle, fontsize=9)
         ax.set_xlabel("Window")
+        ax.set_ylabel(ylabel, fontsize=8.5)
         ax.grid(True, ls=":", alpha=0.6)
         ax.set_ylim(-0.05, 1.08)
-    axes[0].set_ylabel("Clean Benign FPR")
-    axes[0].legend(loc="upper left", fontsize=8)
+        if idx in (0, 2):
+            ax.legend(loc="best", fontsize=7)
     add_smoke_watermark(fig)
     fig.tight_layout(rect=[0, 0, 1, 0.92])
     p_d = os.path.join(fig_dir, "fig_d_drift_s1_s5_fpr_over_time.png")
@@ -351,8 +356,11 @@ def generate_smoke_figures(
     with open(p_d.replace(".png", ".caption.txt"), "w", encoding="utf-8") as f:
         f.write(
             f"{WATERMARK_TEXT}\n"
-            "Figure (d): Clean benign FPR across windows 0..15 for drift scenarios S1-S5 comparing static thresholds "
-            "against the PoisoningAwareDriftGuard (G1-G4 + bounded step + rollback) on synthetic smoke streams.\n"
+            "Figure (d): Drift & poisoning scenarios S1-S5 across windows 0..15 on synthetic smoke streams. "
+            "Panels S1 & S2 plot Clean Benign FPR (Static spikes after benign shift while Guarded adapts); "
+            "Panels S3 & S4 plot Held-Out Attack TPR (Unguarded ADWIN accepts poisoned updates and loses detection, "
+            "whereas Guarded G1-G4 rejects S3 and bounds S4); Panel S5 plots Concurrent Mimicry/Slow-C2 Detection Rate "
+            "(Tier-2 SlowC2Tracker fires once >=8 periodic connections accumulate at window 7).\n"
         )
 
     # (e) Cost-of-evasion curve
@@ -464,8 +472,9 @@ def run_once(work_dir: str, fig_dir: str = None, epochs: int = 50, seed: int = 4
         "S5_mimicry_and_slow_c2",
     ]:
         _, tr_st = run_method_on_scenario(scen, "static", "static", GuardConfig(), seed=seed)
+        _, tr_ad = run_method_on_scenario(scen, "plain_adwin_retrain", "plain_adwin_retrain", GuardConfig(), seed=seed)
         _, tr_gd = run_method_on_scenario(scen, "guarded", "guarded", GuardConfig(), seed=seed)
-        drift_traces[scen] = {"static": tr_st, "guarded": tr_gd}
+        drift_traces[scen] = {"static": tr_st, "plain_adwin_retrain": tr_ad, "guarded": tr_gd}
     with open(os.path.join(drift_dir, "drift_traces_static_vs_guarded.json"), "w", encoding="utf-8") as f:
         json.dump(drift_traces, f, indent=2, sort_keys=True)
 

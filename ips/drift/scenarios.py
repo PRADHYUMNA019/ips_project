@@ -197,12 +197,9 @@ def run_method_on_scenario(
     # Never shown to the guard; used solely to measure online attack TPR at window w!
     probe_attack_scores = rng.normal(loc=0.44, scale=0.04, size=120).clip(0.32, 0.65)
 
-    # For S5 mimicry + slow C2, also run Tier-2 SlowC2Tracker (N4)
+    # For S5 mimicry + slow C2, run Tier-2 SlowC2Tracker (N4) incrementally across windows (1 beacon per window)
     c2_tracker = SlowC2Tracker(min_connections=8, cv_threshold=0.35)
     t_conn = 0.0
-    for _ in range(12):
-        t_conn += float(rng.uniform(42.0, 48.0))  # 45s beacon with small jitter
-        c2_res = c2_tracker.record_connection("10.0.1.4", "10.0.2.10", 8443, t_conn)
 
     trace = []
     post_shift_fprs = []
@@ -211,6 +208,8 @@ def run_method_on_scenario(
     rejections = 0
 
     for w_idx, win_events in enumerate(windows):
+        t_conn += float(rng.uniform(42.0, 48.0))  # 45s periodic C2 beacon with small jitter
+        c2_res = c2_tracker.record_connection("10.0.1.4", "10.0.2.10", 8443, t_conn)
         step_res = guard.evaluate_window(win_events, mode=mode)
         cur_t = guard.threshold
 

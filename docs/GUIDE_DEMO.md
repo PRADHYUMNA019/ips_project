@@ -1,7 +1,7 @@
 # Guide Review Walkthrough Script (`docs/GUIDE_DEMO.md`)
 
-> **Target Duration**: 7–10 minutes (Windows laptop, no Linux VM required for this review).
-> **Honesty Banner**: Everything demonstrated live today is `UNIT TEST`, `SYNTHETIC SMOKE (pipeline demonstration only)`, or offline `REAL PUBLIC DATA` audit. **No Linux/kernel/real-testbed result exists yet.**
+> **Target Duration**: 7–10 minutes (Windows laptop, branch `p9-fixes`, no Linux VM required for this review).
+> **Honesty Banner**: Everything demonstrated live today is `UNIT TEST`, `SYNTHETIC SMOKE (pipeline demonstration only)`, or offline `REAL PUBLIC DATA` audit/diagnostic. **No Linux/kernel/real-testbed result exists yet.**
 
 ---
 
@@ -13,11 +13,11 @@
 ---
 
 ## 2. Architecture Walkthrough (~1.5 minutes)
-Open [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) and walk through the 4 Mermaid diagrams:
-- **Diagram 1 (Two-Tier Overview)**: Kernel XDP fast path (`ebpf/ips_engine.c`, `SCHEMA_VERSION 4`) does $O(1)$ `verdict_map` enforcement/bypass, Tier-0 SYN rate limiting, and payload-only feature collection; user space runs masked INT8 autoencoders + drift guard.
-- **Diagram 2 (Progressive Checkpoints `4 → 8 → 16`)**: Attacks drop at packet 4 (`VERDICT_DROP`, sticky until TTL); benign flows receive `VERDICT_BYPASS` at packet 16 so remaining packets stay in the kernel.
-- **Diagram 3 (Drift Guard `G1–G4`)**: Persistence (`G1`), cross-device class quorum (`G2`, fails closed for `< 3` devices), non-periodicity (`G3`), and shadow validation against frozen benign ANCHOR + DEV-attack CANARY (`G4`), with honest failure mode `S4`.
-- **Diagram 4 (Split Governance)**: Strict session-level splits, benign-only train/calib, DEV families (`A1, A2, A5`) separated from held-out zero-days (`A3, A4`), and offline-only public datasets.
+Open [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) or the exported PNG/SVG diagrams in [`demo/figures/diagrams/`](../demo/figures/diagrams/):
+- **Diagram 1 (`01_two_tier_overview.png`)**: Kernel XDP fast path (`ebpf/ips_engine.c`, `SCHEMA_VERSION 4`) does $O(1)$ `verdict_map` enforcement/bypass, Tier-0 SYN rate limiting, and payload-only feature collection (`flow_idle_s = 120 s`); user space runs `FEATURE_SCHEMA_VERSION = 2` (`log_iat / 7.0` in `[0, 1.5]`) + masked INT8 autoencoders + drift guard.
+- **Diagram 2 (`02_checkpoint_sequence.png`)**: Attacks drop at packet 4 (`VERDICT_DROP`, sticky until TTL); benign flows receive `VERDICT_BYPASS` at packet 16 so remaining packets stay in the kernel.
+- **Diagram 3 (`03_drift_guard_flow.png`)**: Persistence (`G1`), cross-device class quorum (`G2`, fails closed for `< 3` devices), non-periodicity (`G3`), and shadow validation against frozen benign ANCHOR + DEV-attack CANARY (`G4`), with honest failure mode `S4`.
+- **Diagram 4 (`04_splits_and_leakage.png`)**: Session-level splits, benign-only train/calib, DEV families (`A1, A2, A5`) separated from held-out zero-days (`A3, A4`), and offline-only public datasets.
 
 ---
 
@@ -26,48 +26,53 @@ Run the single-command PowerShell demo runner from any directory:
 ```powershell
 powershell -ExecutionPolicy Bypass -File demo\run_demo.ps1
 ```
-Point out the three PASS lines in the summary table (~70 s total):
-1. **Unit Test Suite (`pytest -q`)**: `69 passed, 0 failed` (`UNIT TEST`).
-2. **Claims & Title Audit (`audit/check_claims.py`)**: `0 forbidden phrases`, `3/3` identical canonical titles (`UNIT TEST`).
-3. **End-to-End Smoke Pipeline (`demo/run_smoke_pipeline.py`)**: exercises split assertions, `[4, 8, 16]` training + INT8 quantization, EVT/conformal/3σ thresholds, `MockBPFBackend` sticky DROP & watchdog load shedding, drift `S1–S5`, and C3 evasion curve — verified **10/10 artefacts byte-for-byte identical** across repeated runs (`demo/evidence/smoke/smoke_pipeline_summary.json`).
+Point out the three PASS lines in the summary table:
+1. **Unit Test Suite (`pytest -q`)**: **`73 passed, 0 failed`** (`UNIT TEST`).
+2. **Claims & Title Audit (`audit/check_claims.py`)**: **`0 forbidden phrases`**, `3/3` identical canonical titles (`UNIT TEST`).
+3. **End-to-End Smoke Pipeline (`demo/run_smoke_pipeline.py`)**: exercises split assertions, `[4, 8, 16]` training + INT8 quantization, EVT/conformal/3σ thresholds, `MockBPFBackend` (`attack_exfil_1 -> DROP` at `pkt=4`, `benign_sensor_1 -> BYPASS` at `pkt=16`, watchdog shed/recover), drift `S1–S5`, and C3 evasion curve — verified **10/10 artefacts byte-for-byte identical** across repeated runs (`demo/evidence/smoke/smoke_pipeline_summary.json`).
 
 ---
 
 ## 4. Watermarked Smoke Figures (~1 minute)
-Show the 5 figures under [`demo/figures/smoke/`](../demo/figures/smoke/) and explicitly point to the red watermark **"SYNTHETIC SMOKE DATA — NOT A RESULT"**:
-- `fig_a_roc_pr_per_checkpoint.png` — ROC/PR curves per checkpoint (`k=4, 8, 16`).
+Show the 5 figures under [`demo/figures/smoke/`](../demo/figures/smoke/) and point to the red watermark **"SYNTHETIC SMOKE DATA — NOT A RESULT"**:
+- `fig_a_roc_pr_per_checkpoint.png` — ROC/PR curves per checkpoint (`k=4, 8, 16`) on flows reaching each checkpoint.
 - `fig_b_detection_vs_packets_leaked.png` — Progressive `[4, 8, 16]` vs. fixed single-checkpoint leakage Pareto.
 - `fig_c_calibration_target_vs_achieved_fpr.png` — EVT vs. split-conformal (with $1/(n+1)$ sample floor) vs. mean+3σ.
-- `fig_d_drift_s1_s5_fpr_over_time.png` — Static vs. Guarded (`G1–G4`) FPR across scenarios `S1–S5`.
+- `fig_d_drift_s1_s5_fpr_over_time.png` — S1–S2 Clean Benign FPR (Static spikes; Guarded adapts), S3–S4 Held-Out Attack TPR (Unguarded ADWIN gets poisoned; Guarded preserves TPR), and S5 Concurrent Slow-C2 TPR (Tier-2 fires at window 7 after 8 beacons).
 - `fig_e_cost_of_evasion_curve.png` — Query-bounded ($Q=200$) white-box adaptive attacker utility vs. detection curve.
-*Key message*: These prove the full experimental and plotting machinery works deterministically, NOT that the numbers are research results.
 
 ---
 
 ## 5. Real Public Dataset Audit: TQH-C2 D & IoT-23 Benign (~1.5 minutes)
 Open [`docs/DATASET_AUDIT.md`](DATASET_AUDIT.md), [`demo/evidence/real/tqh_c2_audit.csv`](../demo/evidence/real/tqh_c2_audit.csv), and [`demo/evidence/real/iot23_benign_audit.csv`](../demo/evidence/real/iot23_benign_audit.csv) (`REAL PUBLIC DATA`):
 - **TQH-C2 Testbed D (Zenodo `21523144`, CC-BY-4.0, SHA-256 verified, 11,528 rows: 9,564 benign / 1,964 `malicious_c2`)**:
-  - Real Merlin HTTP/2-over-TLS C2 flows average **33 total packets** and **31.02 s** duration: **100.0% / 98.1% / 97.7%** are **estimated** to reach `k=4 / 8 / 16` payload packets (**upper bound**: payload packets estimated as `total_pkts - 3`; TLS handshakes consume more).
-  - Our Tier-2 `SlowC2Tracker` (`min_connections=8, CV<=0.35`) flags **71/71** C2 host pairs that reach ≥8 connections (`15/15` at 30 s even at 70% jitter, `26/26` at 300 s, `0/15` reaching 8 connections at 1,800–3,600 s within ~1–2 h) alongside **`0/157` (`0.00%`) real benign host pairs flagged** (`min CV = 0.388`; reporting `"15/15 flagged"` without the benign host-pair false-positive baseline would be meaningless).
-  - **Honest schema finding**: `TQH-C2_features_D.zip` has Zeek flow summaries only, not per-packet sequences — per-packet `3N+8` evaluation requires the 1.82 GB raw pcap in the Linux VM phase.
-- **Aposemat IoT-23 Benign Pcaps (8 real pcaps, 513 MB streamed via `dpkt` with `flow_idle_s=120 s`, 1,447 flows)**:
-  - `4-1` Philips Hue (353 flows, 0.28% TLS), `5-1` Amazon Echo (844 flows, 16.2% TLS), `7-1` Somfy Door Lock (250 flows, 3.6% TLS).
-  - **Motivates progressive early exit**: only **6.01%** of these (mostly UDP — **72.7%** after `120 s` split; `69.0%` pre-split) flows reach `k=16`, while **30.20%** reach `k=4` (and **100.0%** on Somfy at median `18.5 ms`).
+  - Real Merlin HTTP/2-over-TLS C2 flows have median **33 total packets** and **31.02 s** duration: **100.0% / 98.1% / 97.7%** are **estimated** to reach `k=4 / 8 / 16` payload packets (**upper bound**: `total_pkts - 3`; TLS handshakes consume more).
+  - Tier-2 `SlowC2Tracker` (`min_connections=8, CV<=0.35`) flags **71/71** C2 host pairs reaching ≥8 connections (`15/15` at 30 s, `26/26` at 300 s, `0/15` reaching 8 connections at 1,800–3,600 s within 1–2 h) alongside **`0/157` (`0.00%`) real benign host pairs flagged** (`min CV = 0.388`; reporting `"15/15 flagged"` without the benign host-pair false-positive baseline is meaningless).
+  - **Schema limitation**: `TQH-C2_features_D.zip` has Zeek flow summaries only; per-packet `3N+8` evaluation requires the 1.82 GB raw pcap in Prompt 7.
+- **Aposemat IoT-23 Benign Pcaps (8 pcaps, 513 MB streamed via `dpkt` with `flow_idle_s = 120 s`, `1,447` flows)**:
+  - `4-1` Hue (`353` flows, `0.28%` TLS), `5-1` Echo (`844` flows, `16.23%` TLS), `7-1` Somfy (`250` flows, `3.60%` TLS).
+  - **Motivates progressive early exit**: only **6.01%** of these (mostly UDP — **72.7%** post-split; `69.0%` pre-split) flows reach `k=16`, whereas **30.20%** reach `k=4` (`100.0%` on Somfy at median `18.49 ms`).
 
 ---
 
 ## 6. Exploratory Real IoT-23 Domain-Shift Diagnostic (~45 seconds)
-Open [`docs/EXPLORATORY_P8.md`](EXPLORATORY_P8.md) and [`demo/evidence/real/exploratory_results.csv`](../demo/evidence/real/exploratory_results.csv) (`REAL PUBLIC DATA — DOMAIN-SHIFT DIAGNOSTIC, NOT A DETECTION RESULT`):
-- Setup caveat: **benign-only cross-device transfer** (not attack detection), **fixed capture split** (seeds `{42, 43, 44}` vary model initialisation only), and **69.0%–72.7% UDP** flows.
-- After normalising `log_iat` by `/ 7.0` and applying the kernel-matching `120 s` idle split, `Echo(5-1) -> Hue(4-1) calib -> Somfy(7-1) test` `FPR@EVT0.05` dropped from `0.945–0.948` to **`0.156–0.204`** (`FPR@EVT0.01`: `0.0053–0.1840`), while `Echo -> Somfy calib -> Hue test` rose from `0.003–0.006` to **`0.035–0.095`** (`KS = 0.83–0.84`).
-- Residual shift is consistent with / likely due to genuine cross-device protocol and direction-pattern differences (`dir_1..3`, `std_log_iat`), motivating per-device-class calibration (`N5`) in Prompt 7.
+Open [`docs/EXPLORATORY_P8.md`](EXPLORATORY_P8.md) (`REAL PUBLIC DATA — DOMAIN-SHIFT DIAGNOSTIC, NOT A DETECTION RESULT`):
+- **Caveats**: benign-only cross-device transfer (not attack detection), fixed capture split (seeds `{42, 43, 44}` vary model initialisation only), and **69.0%–72.7% UDP** flows.
+- **Before vs. After (`Echo -> Hue calib -> Somfy test`, `FPR@EVT0.05`)**: `0.948 / 0.945 / 0.945` (`p8-demo`) → **`0.156 / 0.175 / 0.204`** after `/ 7.0` IAT scaling + `120 s` flow-idle split (`FPR@EVT0.01`: `0.0053 / 0.0053 / 0.1840`), while `Echo -> Somfy calib -> Hue test` rose from `0.003–0.006` to **`0.035–0.095`** (`KS = 0.83–0.84`), likely due to cross-device protocol/direction differences (`dir_1..3`, `std_log_iat`).
 
 ---
 
-## 7. Engineering Rigour: Adversarial Audit & Mutation Testing (~45 seconds)
-Open [`docs/AUDIT_REPORT.md`](AUDIT_REPORT.md) §10 and [`audit/mutation_results.md`](../audit/mutation_results.md):
-- We ran an adversarial self-audit + 17 deliberate code mutations (`M1–M16`).
-- We caught and fixed real bugs before running on Linux: an `emitted_mask` regression in `ebpf/ips_engine.c` (caught by source-text invariant guard), a non-sticky DROP verdict bug (`C2`), unmasked zero-padding MSE bias (`C1`), and 8 earlier invalid mutation targets (now fixed with single-occurrence + disk-diff assertions: **17/17 KILLED, 0 survived, 0 invalid**).
+## 7. Slide: Known Issues Found by Independent Review & How They Were Fixed (`Prompt 9`)
+
+> Showing that an adversarial review caught real defects — and that we fixed them with red→green tests and reported even metrics that worsened — demonstrates scientific and engineering maturity:
+
+| Review Finding (`p8-demo`) | Root Cause Identified | Fix & Verification (`p9-fixes`) | Before → After (Honest Report) |
+|---|---|---|---|
+| **1. Smoke ROC below diagonal (`AUROC = 0.3213`) & `benign_sensor_1` false `DROP`** | `epochs=8` (32 updates) left decoder `log_iat` stuck at `~2.7` (closer to fast attacks than slow benign); `score_onnx_model` lacked `build_valid_mask_matrix`; smoke `A3_c2` overlapped benign; `IPSEngine` ignored `cfg['engine']['model_card']` & inverted `ckpt_thresholds` check | Masked `score_onnx_model`, adaptive batch/epochs (`50`), asymmetric C2 burst in `synth.py`, fixed `IPSEngine` `model_card` + `_loaded_threshold`; 2 red→green tests | Smoke INT8 AUROC: `0.3213 → 1.0000` *(SMOKE ONLY)*; `benign_sensor_1`: `DROP (2.53) → BYPASS (0.0006)` |
+| **2. Unnormalised per-packet `log_iat` (`[0, ~7.5]`)** | `ips/features.py` scaled `mean_log_iat / 7.0` but left per-packet `log_iat_i` raw (`~30×` MSE dominance) | Scaled `log_iat_i / 7.0` clipped to `[0, 1.5]` (`FEATURE_SCHEMA_VERSION = 2`); added range/balance test + mutant `M17` (`18/18 KILLED`) | `Hue->Somfy` `k=4` FPR@0.05: `0.9476 → 0.0572` (`k=8,16`: `0.62–0.67`); `Somfy->Hue` rose `0.006 → 0.081` *(reported honestly)* |
+| **3. Offline extractor lacked `flow_idle_s = 120 s` split (`ttv_p95` in hours)** | `pcap_to_flows.py` glued UDP/NTP/SSDP 5-tuples hours apart into single flows & reset on SYN retransmits | Added `ebpf/ips_engine.c` idle (`120 s`) + `FIN/RST + SYN` rules to `pcap_to_flows.py` & `equivalence.py`; 5-case pcap test | IoT-23 flows `1,254 → 1,447`; Somfy `ttv_k8_p95`: **`4.39e7 ms` (12.2 h) → `54,767 ms` (54.8 s)**; Hue `ttv_k4_p95`: **`8.68e6 ms` → `212 ms`** |
+| **4. Overstated public-data wording & missing tracker FP baseline** | Missing benign host-pair CV rate next to `"15/15 C2 flagged"`; `total_pkts - 3` stated without upper-bound caveat | Added `demo/audit_tqh_c2_real.py` measuring benign host pairs; calibrated wording across 5 docs | TQH-C2 `CV<=0.35` (`>=8` conns): **`71/71` C2 pairs vs. `0/157` (`0.00%`) benign pairs** (`min CV = 0.388`) |
+| **5. Figure D flat-zero panels (`S3–S5`) & missing diagram PNG/SVGs** | S3–S5 plotted Clean Benign FPR (`0.0`) instead of poisoning/C2 impact | Plotted Held-Out Attack TPR on S3–S4 (Unguarded ADWIN vs. Guarded) & Concurrent C2 TPR on S5; exported 4 PNG+SVG diagrams | Informative 5-panel Figure D + 8 diagram files in `demo/figures/diagrams/` |
 
 ---
 
@@ -85,14 +90,14 @@ Open [`demo/evidence/CLAIMS_VS_EVIDENCE.md`](../demo/evidence/CLAIMS_VS_EVIDENCE
 ## 9. Likely Guide Questions & Honest Answers
 
 1. **Why use a synthetic/emulated testbed at all instead of only public datasets?**
-   - You cannot drop packets inline from a recorded pcap or CSV. Measuring real attack-packet leakage, time-to-verdict, verdict-cache bypass speedup, and operational harm (benign sessions severed) requires live TLS flows passing through a live XDP gateway. Public datasets (TQH-C2 D, IoT-23, CESNET) complement the testbed offline for real-world C2, real IoT hardware benign shift, and long-term TLS drift.
+   - You cannot drop packets inline from a recorded pcap or CSV. Measuring real attack-packet leakage, time-to-verdict, verdict-cache bypass speedup, and operational harm (benign sessions severed) requires live TLS flows passing through a live XDP gateway. Public datasets (TQH-C2 D, IoT-23, CESNET) complement the testbed offline for real-world C2, IoT hardware benign shift, and long-term TLS drift.
 2. **Why emulate resource limits via cgroups instead of measuring on a Raspberry Pi now?**
-   - We do not yet have physical edge hardware provisioned for the 60%–80% phase. Rather than overclaiming, every document carries a Scope Note stating we measure an emulated resource-constrained gateway (Linux namespaces + cgroup CPU/RAM profiles S/M/L on user space; generic XDP unconstrained) and flags the `"On-Device"` title wording as `TITLE_DECISION_PENDING` for guide approval.
+   - We do not yet have physical edge hardware provisioned for the 60%–80% phase. Every document carries a Scope Note stating we measure an emulated resource-constrained gateway (Linux namespaces + cgroup CPU/RAM profiles S/M/L on user space; generic XDP unconstrained) and flags `"On-Device"` as `TITLE_DECISION_PENDING`.
 3. **What is actually novel, and how will you prove it?**
-   - Four focused claims (`C1–C4`): progressive `[4, 8, 16]` XDP early-drop/late-bypass with flow-level $\alpha$-spending (`C1`), poisoning-aware 4-gate drift guard with honest `S4` boundary (`C2`), two-tier detection + white-box $Q=200$ cost-of-evasion curve (`C3`), and real cross-domain + operational-harm + split-conformal-vs-EVT evaluation (`C4`). Novelty is **not yet claimed established** — it will be tested against pre-registered hypotheses on real Linux/testbed/public data in Prompt 7 and verified against literature in `docs/related_work_todo.md`.
+   - Four focused claims (`C1–C4`): progressive `[4, 8, 16]` XDP early-drop/late-bypass with flow-level $\alpha$-spending (`C1`), poisoning-aware 4-gate drift guard with honest `S4` boundary (`C2`), two-tier detection + white-box $Q=200$ cost-of-evasion curve (`C3`), and cross-domain + operational-harm + split-conformal-vs-EVT evaluation (`C4`). Novelty is **not yet claimed established** until tested on real Linux/testbed/public data in Prompt 7.
 4. **What happens if early-window detection fails on slow C2 beacons?**
-   - Our real TQH-C2 D audit showed two regimes: Merlin HTTP/2-over-TLS connections carry ~33 total packets in ~31 s (`97.7%–100%` are **estimated** as an upper bound `total_pkts - 3` to reach checkpoints 4/8/16; TLS handshakes consume more), whereas ultra-slow 1-packet or mimicry beacons that evade Tier-1 are handed to the Tier-2 host-pair `SlowC2Tracker` (`71/71` C2 pairs >=8 conns flagged vs `0/157` benign host pairs flagged on Testbed D, while `0/15` C2 pairs reach 8 connections within 1–2 h at 1,800–3,600 s intervals).
+   - Our real TQH-C2 D audit showed two regimes: Merlin HTTP/2-over-TLS connections carry ~33 total packets in ~31 s (`97.7%–100%` are **estimated** as an upper bound `total_pkts - 3` to reach checkpoints 4/8/16; TLS handshakes consume more), whereas ultra-slow 1-packet or mimicry beacons that evade Tier-1 are handed to Tier-2 `SlowC2Tracker` (`71/71` C2 pairs ≥8 conns flagged vs `0/157` benign host pairs flagged on Testbed D, while `0/15` C2 pairs reach 8 connections within 1–2 h at 1,800–3,600 s intervals).
 5. **Why are public datasets used offline only (no pcap replay through the gateway)?**
-   - Replaying recorded public pcaps breaks closed-loop TCP/TLS state (retransmissions, congestion control, TLS handshakes cannot react to an inline `XDP_DROP`). Public datasets are therefore strictly offline-only (`Rule H5`), while inline closed-loop prevention is evaluated on live TLS traffic in our Linux namespace testbed.
+   - Replaying recorded public pcaps breaks closed-loop TCP/TLS state (retransmissions, congestion control, TLS handshakes cannot react to an inline `XDP_DROP`). Public datasets are therefore strictly offline-only (`Rule H5`).
 6. **What does the remaining 20% (after Prompt 7's 80% milestone) cover?**
-   - Full verified literature review & citations, extra experiments/ablations requested by guides, optional physical embedded hardware validation (Raspberry Pi / OpenWrt router) + libbpf/CO-RE migration (removing BCC/Clang runtime dependency), additional public datasets, and final camera-ready paper formatting.
+   - Full verified literature review & citations, guide-requested ablations, optional physical embedded hardware validation (Raspberry Pi / OpenWrt router) + libbpf/CO-RE migration, additional public datasets, and camera-ready paper formatting.
