@@ -57,3 +57,11 @@
 - **IoT-23 benign streaming `dpkt` pcap audit (`demo/evidence/real/iot23_benign_audit.csv`)**:
   - Command: `python demo/audit_iot23_real.py`
   - Output: `1,254` total flows (`4-1`: 353, `5-1`: 761, `7-1`: 140), `139` TLS (`11.08%`), reaching checkpoints `k=4/8/16`: `22.01% / 10.13% / 6.54%`.
+
+---
+
+## Phase 4 — Exploratory Real Cross-Device Benign Experiment (`REAL PUBLIC DATA — EXPLORATORY`)
+
+- **IoT-23 cross-device benign transfer (`demo/evidence/real/exploratory_results.csv`, seeds 42, 43, 44)**:
+  - Command: `python demo/run_exploratory_p8.py`
+  - Output: `Echo->Hue_cal->Somfy_test`: FPR@0.05 = `0.9452–0.9476` (`KS = 0.921–0.928`, top shift `log_iat_1 +8.2..+10.9`); `Echo->Somfy_cal->Hue_test`: FPR@0.05 = `0.0028–0.0057` (`KS = 0.921–0.928`). TQH-C2 D TPR explicitly skipped per §4.3 (no per-packet sequences in `TQH-C2_features_D.zip`).
