@@ -65,3 +65,14 @@
 - **IoT-23 cross-device benign transfer (`demo/evidence/real/exploratory_results.csv`, seeds 42, 43, 44)**:
   - Command: `python demo/run_exploratory_p8.py`
   - Output: `Echo->Hue_cal->Somfy_test`: FPR@0.05 = `0.9452–0.9476` (`KS = 0.921–0.928`, top shift `log_iat_1 +8.2..+10.9`); `Echo->Somfy_cal->Hue_test`: FPR@0.05 = `0.0028–0.0057` (`KS = 0.921–0.928`). TQH-C2 D TPR explicitly skipped per §4.3 (no per-packet sequences in `TQH-C2_features_D.zip`).
+
+---
+
+## Phase 5 — Final Claims Audit & Unit Test Gate (`UNIT TEST`)
+
+- **Final claims & title consistency check**:
+  - Command: `python audit/check_claims.py`
+  - Output: `1. Explicit Forbidden Phrases Found: 0` / `3. Title Consistency Check (Rule R4): 3/3 match` (exit code `0`)
+- **Final unit test verification (after all P8 edits)**:
+  - Command: `python -m pytest -q`
+  - Output: `69 passed, 18 warnings` (exit code `0`)

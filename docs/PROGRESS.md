@@ -25,7 +25,7 @@
 
 ## V1 Unit Test Summary (Executed on Host)
 - `tests/test_cross_eval.py`: 1 passed
-- `tests/test_dataset_adapters.py`: 6 passed
+- `tests/test_dataset_adapters.py`: 7 passed
 - `tests/test_drift_guard.py`: 5 passed
 - `tests/test_engine_closed_loop.py`: 11 passed
 - `tests/test_features.py`: 7 passed
@@ -38,7 +38,7 @@
 - `tests/test_shell_permissions.py`: 2 passed
 - `tests/test_splits_and_joins.py`: 3 passed
 - `tests/test_topology_parse.py`: 3 passed
-- **Total V1 Unit Tests**: **68 passed, 0 failed**
+- **Total V1 Unit Tests**: **69 passed, 0 failed**
 
 ## Not Run Here (V2 Linux Required / V3 Real Data Required)
 - `sudo bash scripts/verify_linux.sh` (Stages S0, S2–S4, S6, S6b, S6c require Linux root + network namespaces + BCC + `tc netem`)
@@ -60,3 +60,4 @@
 - **P8.2 (SYNTHETIC SMOKE pipeline + watermarked figures) — DONE**: Created `demo/run_smoke_pipeline.py` running smoke generation → split integrity assertions → `3N+8` features → per-checkpoint `[4, 8, 16]` training & INT8 export → EVT/conformal/3σ calibration → offline eval → `MockBPFBackend` closed loop (sticky DROP + watchdog shed/recover) → drift S1–S5 → C3 evasion curve. Ran twice with fixed seed 42: **10/10 deterministic artefacts byte-for-byte IDENTICAL**. Generated 5 colour-blind-safe watermarked figures + captions under `demo/figures/smoke/`. Verified `demo/run_demo.ps1` from external directory `C:\Users\Dell` (**PASS, 71.1s**).
 - **P8.3 (REAL PUBLIC DATA: TQH-C2 Testbed D + IoT-23 Benign) — DONE**: Verified Zenodo `21523144` (`TQH-C2 v1.2.0`, CC-BY-4.0); wrote `datasets/download_tqh_c2_win.py` & downloaded small files (`features_D`, `labels_D`, `README_v120`, `SHA256SUMS_v120`, all 3 SHA-256 **PASS**) to `D:\ips_data\tqh_c2`. Verified 27 Parquet columns in `datasets/adapters/tqh_adapter.py` + added 6-row CC-BY-4.0 fixture test (`tests/test_dataset_adapters.py`: 7 passed). Audited all `11,528` TQH-C2 D rows (`9,564` benign, `1,964` `malicious_c2`; `100.0%/98.1%/97.7%` reach est. `k=4/8/16`; median dur `31.02s`). Downloaded all 3 real IoT-23 benign captures (`4-1` Hue, `5-1` Echo, `7-1` Somfy; `512.97 MB` on `D:\ips_data\iot23`) and streamed through `ips/offline/pcap_to_flows.py` (`1,254` flows, `11.08%` TLS, `22.01%/10.13%/6.54%` reaching `k=4/8/16`). Wrote `docs/DATASET_AUDIT.md`, `demo/evidence/real/tqh_c2_audit.csv`, and `demo/evidence/real/iot23_benign_audit.csv`.
 - **P8.4 (EXPLORATORY REAL DATA: IoT-23 cross-device benign transfer; TQH-C2 TPR skipped per §4.3) — DONE (PARTIAL BY DESIGN)**: Pre-stated plan in `docs/EXPLORATORY_P8.md` before running `demo/run_exploratory_p8.py` (seeds 42, 43, 44). Measured severe asymmetric cross-device shift (`KS = 0.921–0.928`, driven by `log_iat_1/0/3`): `Echo->Hue_cal->Somfy_test` FPR@0.05 = `0.945–0.948`; `Echo->Somfy_cal->Hue_test` FPR@0.05 = `0.003–0.006`. TQH-C2 D per-packet autoencoder TPR skipped per §4.3 because `TQH-C2_features_D.zip` contains flow-level Zeek summaries only (1.82 GB pcap excluded per §3.5). Wrote `demo/evidence/real/exploratory_results.csv`.
+- **P8.5 (Diagrams, Claims vs. Evidence, Guide Script & Index) — DONE**: Added 4 Mermaid diagrams to `docs/ARCHITECTURE.md` (two-tier overview, checkpoint 4/8/16 sequence, drift guard G1–G4, split governance; `mmdc` not installed so source + render commands documented). Wrote `demo/evidence/CLAIMS_VS_EVIDENCE.md` (strictly matching `docs/PAPER_OUTLINE.md` statuses), `docs/GUIDE_DEMO.md` (7–10 min walkthrough + 6 Q&As), and `demo/evidence/INDEX.md`. Final `pytest -q` (69 passed) and `audit/check_claims.py` (0 violations) PASS.
