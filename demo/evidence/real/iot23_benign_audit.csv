@@ -1,4 +1,4 @@
 source,capture,device,pcap_files,pcap_mb,flows,tls_flows,tls_pct,tcp_flows,udp_flows,payload_pkts_p50,payload_pkts_p90,payload_pkts_max,pct_reach_k4,pct_reach_k8,pct_reach_k16,ttv_k4_p50_ms,ttv_k4_p95_ms,ttv_k8_p50_ms,ttv_k8_p95_ms,ttv_k16_p50_ms,ttv_k16_p95_ms
-REAL PUBLIC DATA (Aposemat IoT-23 Benign),CTU-Honeypot-Capture-4-1,Philips Hue Smart LED Bridge,1,4.38,353,1,0.28,57,296,2.0,3.0,16,8.22,0.85,0.57,61.97,8679347.33,58960.5,330295.77,474820.51,803476.72
-REAL PUBLIC DATA (Aposemat IoT-23 Benign),CTU-Honeypot-Capture-5-1,Amazon Echo Smart Speaker,1,363.71,761,121,15.9,315,446,2.0,12.0,16,15.11,13.4,8.41,117.54,50133.58,286.36,91853.7,972.72,190149.59
-REAL PUBLIC DATA (Aposemat IoT-23 Benign),CTU-Honeypot-Capture-7-1,Somfy Smart Door Lock,6,144.88,140,17,12.14,17,123,4.0,16.0,16,94.29,15.71,11.43,30.24,121.24,10392.6,43901593.91,21771.36,10979012.7
+REAL PUBLIC DATA (Aposemat IoT-23 Benign),CTU-Honeypot-Capture-4-1,Philips Hue Smart LED Bridge,1,4.38,353,1,0.28,55,298,2.0,3.0,16,7.65,0.85,0.57,61.72,212.11,58960.48,330295.65,474820.47,803476.69
+REAL PUBLIC DATA (Aposemat IoT-23 Benign),CTU-Honeypot-Capture-5-1,Amazon Echo Smart Speaker,1,363.71,844,137,16.23,331,513,2.0,11.7,16,18.96,12.44,7.58,141.71,39619.03,288.86,62659.86,1034.8,44414.28
+REAL PUBLIC DATA (Aposemat IoT-23 Benign),CTU-Honeypot-Capture-7-1,Somfy Smart Door Lock,6,144.88,250,9,3.6,9,241,4.0,8.0,16,100.0,13.2,8.4,18.49,356.84,7577.7,54766.8,22418.98,135028.14

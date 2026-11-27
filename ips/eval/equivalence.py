@@ -28,7 +28,7 @@ REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
 
 from ips.features import build_early_vector
-from ips.offline.pcap_to_flows import extract_flows_from_pcap, canonical_flow_key
+from ips.offline.pcap_to_flows import extract_flows_from_pcap, canonical_flow_key, _default_flow_idle_s
 
 
 def load_kernel_events_jsonl(jsonl_path: str) -> List[Dict[str, Any]]:
@@ -45,14 +45,17 @@ def load_kernel_events_jsonl(jsonl_path: str) -> List[Dict[str, Any]]:
     return events
 
 
-def extract_raw_pcap_flows(pcap_path: str, early_n: int = 12, lan_prefix: str = "10.0.1.") -> List[Dict[str, Any]]:
+def extract_raw_pcap_flows(
+    pcap_path: str, early_n: int = 12, lan_prefix: str = "10.0.1.", flow_idle_s: float = None
+) -> List[Dict[str, Any]]:
     """
-    Parse a pcap using the exact same rules as pcap_to_flows.py, returning raw
+    Parse a pcap using the exact same rules as pcap_to_flows.py / ebpf/ips_engine.c, returning raw
     sizes, dirs, and iat_ns alongside canonical keys for direct comparison with kernel events.
     """
     import dpkt
     import socket
 
+    idle_limit_s = _default_flow_idle_s() if flow_idle_s is None else float(flow_idle_s)
     active = {}
     completed = []
 
@@ -71,6 +74,7 @@ def extract_raw_pcap_flows(pcap_path: str, early_n: int = 12, lan_prefix: str = 
                 ip = eth.data
                 src_ip = socket.inet_ntoa(ip.src)
                 dst_ip = socket.inet_ntoa(ip.dst)
+                tcp_flags = 0
 
                 if isinstance(ip.data, dpkt.tcp.TCP):
                     l4 = ip.data
@@ -79,7 +83,8 @@ def extract_raw_pcap_flows(pcap_path: str, early_n: int = 12, lan_prefix: str = 
                     ip_tot_len = int(getattr(ip, "len", 0))
                     hdr_len = int(getattr(ip, "hl", 5)) * 4 + int(getattr(l4, "off", 5)) * 4
                     payload_len = (ip_tot_len - hdr_len) if ip_tot_len >= hdr_len else len(l4.data)
-                    is_syn = bool(l4.flags & dpkt.tcp.TH_SYN) and not bool(l4.flags & dpkt.tcp.TH_ACK)
+                    tcp_flags = int(l4.flags)
+                    is_syn = bool(tcp_flags & dpkt.tcp.TH_SYN) and not bool(tcp_flags & dpkt.tcp.TH_ACK)
                 elif isinstance(ip.data, dpkt.udp.UDP):
                     l4 = ip.data
                     proto = "UDP"
@@ -91,8 +96,17 @@ def extract_raw_pcap_flows(pcap_path: str, early_n: int = 12, lan_prefix: str = 
                     continue
 
                 ckey = canonical_flow_key(src_ip, sport, dst_ip, dport, proto)
-                if is_syn and ckey in active and len(active[ckey]["sizes"]) > 0:
-                    completed.append(active.pop(ckey))
+                if ckey in active:
+                    cur = active[ckey]
+                    reinit = False
+                    if is_syn and ((cur["flags_seen"] & 0x05) != 0 or len(cur["sizes"]) > 0):
+                        reinit = True
+                    elif idle_limit_s > 0.0 and (float(ts) - cur["last_seen_ts"]) > idle_limit_s:
+                        reinit = True
+                    if reinit:
+                        old_f = active.pop(ckey)
+                        if len(old_f["sizes"]) > 0:
+                            completed.append(old_f)
 
                 if ckey not in active:
                     active[ckey] = {
@@ -101,19 +115,21 @@ def extract_raw_pcap_flows(pcap_path: str, early_n: int = 12, lan_prefix: str = 
                         "ip_b": ckey[2],
                         "port_b": ckey[3],
                         "proto": ckey[4],
+                        "last_seen_ts": float(ts),
+                        "flags_seen": 0,
                         "sizes": [],
                         "dirs": [],
                         "timestamps_ns": [],
                     }
 
                 flow = active[ckey]
+                flow["last_seen_ts"] = float(ts)
+                flow["flags_seen"] |= tcp_flags
                 if payload_len > 0 and len(flow["sizes"]) < early_n:
                     direction = 0 if src_ip.startswith(lan_prefix) else 1
                     flow["sizes"].append(int(payload_len))
                     flow["dirs"].append(int(direction))
                     flow["timestamps_ns"].append(int(round(ts * 1e9)))
-                    if len(flow["sizes"]) == early_n:
-                        completed.append(active.pop(ckey))
             except Exception:
                 continue
 

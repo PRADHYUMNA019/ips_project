@@ -56,18 +56,33 @@ Because `TQH-C2_features_D.zip` reports total flow packets (`orig_pkts + resp_pk
   - `CTU-Honeypot-Capture-5-1` (Amazon Echo): `2018-09-21-capture.pcap` (`363.71 MB`)
   - `CTU-Honeypot-Capture-7-1` (Somfy Door Lock): 6 pcaps (`Somfy-01..06`, `144.88 MB` total)
   - Total on `D:\ips_data\iot23`: **512.97 MB** (well below the 3 GB cap; raw pcaps excluded from git).
-- **Extractor**: Streamed through `ips/offline/pcap_to_flows.py` (`dpkt`, `early_n=16`, LAN CIDRs `192.168.0.0/16, 10.0.0.0/8`).
+- **Extractor**: Streamed through `ips/offline/pcap_to_flows.py` (`dpkt`, `early_n=16`, `flow_idle_s=120.0` from `configs/system.yaml`, LAN CIDRs `192.168.0.0/16, 10.0.0.0/8`).
 
-### 2.2 Real IoT-23 Benign Flow & Checkpoint Reachability Table (`demo/evidence/real/iot23_benign_audit.csv`)
+### 2.2 Real IoT-23 Benign Flow & Checkpoint Reachability Table (`demo/evidence/real/iot23_benign_audit.csv`, After `flow_idle_s = 120 s` Split — Prompt 9 Item 3)
 
-| Capture | Device | Pcaps (MB) | Total Flows | TLS Flows (%) | TCP / UDP | Payload Pkts (p50 / p90) | Reach `k=4` | Reach `k=8` | Reach `k=16` | TTV `k=4` p50 (ms) | TTV `k=8` p50 (ms) | TTV `k=16` p50 (ms) |
+| Capture | Device | Pcaps (MB) | Total Flows | TLS Flows (%) | TCP / UDP | Payload Pkts (p50 / p90) | Reach `k=4` | Reach `k=8` | Reach `k=16` | TTV `k=4` p50 / p95 (ms) | TTV `k=8` p50 / p95 (ms) | TTV `k=16` p50 / p95 (ms) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `CTU-Honeypot-Capture-4-1` | Philips Hue | 1 (4.38) | 353 | 1 (0.28%) | 57 / 296 | 2.0 / 3.0 | 8.22% (29) | 0.85% (3) | 0.57% (2) | 61.97 | 58,960.50 | 474,820.51 |
-| `CTU-Honeypot-Capture-5-1` | Amazon Echo | 1 (363.71) | 761 | 121 (15.90%) | 315 / 446 | 2.0 / 12.0 | 15.11% (115) | 13.40% (102) | 8.41% (64) | 117.54 | 286.36 | 972.72 |
-| `CTU-Honeypot-Capture-7-1` | Somfy Door Lock | 6 (144.88) | 140 | 17 (12.14%) | 17 / 123 | 4.0 / 16.0 | 94.29% (132) | 15.71% (22) | 11.43% (16) | 30.24 | 10,392.60 | 21,771.36 |
-| **Combined (All 3 Benign)** | **3 Real IoT Devices** | **8 (512.97)** | **1,254** | **139 (11.08%)** | **389 / 865** | — | **22.01% (276)** | **10.13% (127)** | **6.54% (82)** | — | — | — |
+| `CTU-Honeypot-Capture-4-1` | Philips Hue | 1 (4.38) | 353 | 1 (0.28%) | 55 / 298 | 2.0 / 3.0 | 7.65% (27) | 0.85% (3) | 0.57% (2) | 61.72 / **212.11** | 58,960.48 / 330,295.65 | 474,820.47 / 803,476.69 |
+| `CTU-Honeypot-Capture-5-1` | Amazon Echo | 1 (363.71) | 844 | 137 (16.23%) | 331 / 513 | 2.0 / 11.7 | 18.96% (160) | 12.44% (105) | 7.58% (64) | 141.71 / 39,619.03 | 288.86 / 62,659.86 | 1,034.80 / **44,414.28** |
+| `CTU-Honeypot-Capture-7-1` | Somfy Door Lock | 6 (144.88) | 250 | 9 (3.60%) | 9 / 241 | 4.0 / 8.0 | 100.00% (250) | 13.20% (33) | 8.40% (21) | 18.49 / 356.84 | 7,577.70 / **54,766.80** | 22,418.98 / **135,028.14** |
+| **Combined (All 3 Benign)** | **3 Real IoT Devices** | **8 (512.97)** | **1,447** | **147 (10.16%)** | **395 / 1,052** | — | **30.20% (437)** | **9.74% (141)** | **6.01% (87)** | — | — | — |
 
-### 2.3 Honest Reading of IoT-23 Benign Audit
-1. **Most real IoT-23 benign flows are very short UDP/DNS/NTP/control exchanges**: Across all 1,254 flows, 69.0% (865/1,254) are UDP and only 11.08% (139/1,254) carry TLS (`4-1` Hue has only 1 TLS flow; `5-1` Echo has 121; `7-1` Somfy has 17).
-2. **Checkpoint reachability strongly validates progressive early exit (C1)**: Only **6.54%** of flows reach `k=16` payload packets, whereas **22.01%** reach `k=4` (including **94.29%** of Somfy flows at median `30.24 ms`). On slow persistent IoT connections (`4-1` Hue, `7-1` Somfy), waiting for `k=16` takes `21.8 s` to `474.8 s` median — confirming why `k=4` and `k=8` progressive checkpoints are necessary.
-3. **Sample-size caution**: With only 1,254 total benign flows across the 3 captures (and only 82 reaching `k=16`), IoT-23 alone cannot support distribution-free split-conformal calibration at `alpha = 1e-3` (which requires `n >= 1,000` calibration flows reaching `k`). This directly justifies collecting our own larger multi-session TLS testbed dataset in Prompt 7.
+### 2.3 Old vs. New Comparison (Before vs. After `flow_idle_s = 120 s` Kernel-Parity Split)
+
+Preserved pre-fix baseline: [`demo/evidence/real/iot23_benign_audit_before_idle_split.csv`](../demo/evidence/real/iot23_benign_audit_before_idle_split.csv).
+
+| Capture | Flows (Old → New) | Reach `k=4 / 8 / 16` (Old → New) | TTV `k=4` p95 ms (Old → New) | TTV `k=8` p95 ms (Old → New) | TTV `k=16` p95 ms (Old → New) |
+|---|---|---|---|---|---|
+| `4-1` Hue | `353 → 353` | `8.22 / 0.85 / 0.57%` → **`7.65 / 0.85 / 0.57%`** | `8,679,347.33` (2.41 h) → **`212.11`** | `330,295.77` → `330,295.65` | `803,476.72` → `803,476.69` |
+| `5-1` Echo | `761 → 844` | `15.11 / 13.40 / 8.41%` → **`18.96 / 12.44 / 7.58%`** | `50,133.58` → **`39,619.03`** | `91,853.70` → **`62,659.86`** | `190,149.59` → **`44,414.28`** |
+| `7-1` Somfy | `140 → 250` | `94.29 / 15.71 / 11.43%` → **`100.0 / 13.20 / 8.40%`** | `121.24` → `356.84` | `43,901,593.91` (12.19 h) → **`54,766.80`** | `10,979,012.70` (3.05 h) → **`135,028.14`** |
+| **Combined** | **`1,254 → 1,447`** | **`22.01 / 10.13 / 6.54%`** → **`30.20 / 9.74 / 6.01%`** | — | — | — |
+
+**Plain-language explanation of what changed**:
+- Previously, `ips/offline/pcap_to_flows.py` lacked the kernel's `120 s` idle-timeout split (`ebpf/ips_engine.c` line 362). Because UDP protocols (NTP, SSDP, mDNS, DNS — **72.7% of extracted flows**) have no `FIN/RST` flags and frequently reuse the same `(src_ip, sport, dst_ip, dport, UDP)` 5-tuple hours apart, the old extractor glued separate periodic UDP exchanges hours apart into a single "flow", producing bogus multi-hour `ttv_p95` values (`8.68×10^6 ms = 2.41 h` on Hue `k=4`; `4.39×10^7 ms = 12.19 h` on Somfy `k=8`).
+- Enforcing `flow_idle_s = 120 s` (and ignoring pure SYN retransmits while splitting on new SYNs after `FIN/RST` or payload) splits those idle-reused 5-tuples (`1,254 → 1,447` flows), collapsing Somfy `ttv_k8_p95` from **12.2 hours to 54.8 s** and Hue `ttv_k4_p95` from **2.41 hours to 212 ms**. Note that active flows whose consecutive packet gaps remain `<= 120 s` (e.g., the 2 persistent Hue connections sending keepalives every ~30–60 s) legitimately span `> 120 s` total time (`474.8 s` to reach 16 packets) without idling out.
+
+### 2.4 Honest Reading of IoT-23 Benign Audit
+1. **Most real IoT-23 benign flows are very short UDP/DNS/NTP/control exchanges**: Across all 1,447 flows, **72.70% (1,052/1,447) are UDP** (`69.0%` before idle split) and only **10.16% (147/1,447)** carry TLS (`4-1` Hue has 1 TLS flow; `5-1` Echo has 137; `7-1` Somfy has 9).
+2. **Checkpoint reachability motivates progressive early exit**: Only **6.01%** of these (mostly UDP) flows reach `k=16` payload packets, whereas **30.20%** reach `k=4` (including **100.0%** of Somfy flows at median `18.49 ms`). On slow persistent IoT connections (`4-1` Hue, `7-1` Somfy), waiting for `k=16` takes `22.4 s` to `474.8 s` median — motivating why `k=4` and `k=8` progressive checkpoints are included alongside `k=16`.
+3. **Sample-size caution**: With only 1,447 total benign flows across the 3 captures (and only 87 reaching `k=16`), IoT-23 alone cannot support distribution-free split-conformal calibration at `alpha = 1e-3` (which requires `n >= 1,000` calibration flows reaching `k`). This directly justifies collecting our own larger multi-session TLS testbed dataset in Prompt 7.

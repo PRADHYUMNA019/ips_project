@@ -19,6 +19,7 @@ import ipaddress
 import argparse
 from collections import defaultdict
 from typing import List, Dict, Any, Optional, Tuple
+import yaml
 import numpy as np
 import pandas as pd
 
@@ -109,6 +110,19 @@ def _finalize_flow(
     return rec
 
 
+def _default_flow_idle_s() -> float:
+    """Load system.flow_idle_s from configs/system.yaml (matching ebpf/ips_engine.c FLOW_IDLE_NS)."""
+    cfg_path = os.path.join(REPO_DIR, "configs", "system.yaml")
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            return float(data.get("system", {}).get("flow_idle_s", 120.0))
+        except Exception:
+            return 120.0
+    return 120.0
+
+
 def extract_flows_from_pcap(
     filepath: str,
     early_n: int = 12,
@@ -119,10 +133,13 @@ def extract_flows_from_pcap(
     label_family: str = "benign",
     is_attack: int = 0,
     domain: str = "testbed",
-) -> List[Dict[str, Any]]:
-    """Parse pcap into a list of canonical early-flow feature + metadata dictionaries."""
+    flow_idle_s: Optional[float] = None,
+) -> pd.DataFrame:
+    """Parse pcap into a canonical early-flow DataFrame using kernel-matching idle/SYN/FIN rules."""
     if dpkt is None:
         raise RuntimeError("dpkt is required for pcap parsing")
+
+    idle_limit_s = _default_flow_idle_s() if flow_idle_s is None else float(flow_idle_s)
 
     if lan_cidrs is None:
         lan_cidrs = ["10.0.1.0/24"]
@@ -159,7 +176,7 @@ def extract_flows_from_pcap(
                 ip_hdr_len = int(getattr(ip, "hl", 5)) * 4
 
                 is_syn_only = False
-                is_fin_or_rst = False
+                tcp_flags = 0
 
                 if isinstance(ip.data, dpkt.tcp.TCP):
                     l4 = ip.data
@@ -173,9 +190,8 @@ def extract_flows_from_pcap(
                     else:
                         payload_len = len(l4.data)
                     raw_payload = bytes(l4.data) if l4.data else b""
-                    flags = int(l4.flags)
-                    is_syn_only = bool(flags & dpkt.tcp.TH_SYN) and not bool(flags & dpkt.tcp.TH_ACK)
-                    is_fin_or_rst = bool(flags & (dpkt.tcp.TH_FIN | dpkt.tcp.TH_RST))
+                    tcp_flags = int(l4.flags)
+                    is_syn_only = bool(tcp_flags & dpkt.tcp.TH_SYN) and not bool(tcp_flags & dpkt.tcp.TH_ACK)
                 elif isinstance(ip.data, dpkt.udp.UDP):
                     l4 = ip.data
                     proto = "UDP"
@@ -194,18 +210,27 @@ def extract_flows_from_pcap(
 
                 ckey = canonical_flow_key(src_ip, sport, dst_ip, dport, proto)
 
-                # A4(b): If a new SYN arrives for an existing 5-tuple with recorded payload packets,
-                # emit the previous flow instance before starting a new instance!
-                if is_syn_only and ckey in active_flows:
-                    old_flow = active_flows.pop(ckey)
-                    if len(old_flow["sizes"]) > 0:
-                        completed_records.append(
-                            _finalize_flow(old_flow, early_n, feat_names, session_id, source, label_family, is_attack, domain)
-                        )
+                # Kernel-matching flow restart rule (ebpf/ips_engine.c lines 359-365):
+                # Restart on (a) pure SYN when FIN/RST (0x05) was seen OR valid_len > 0,
+                # or (b) inter-packet idle gap > flow_idle_s (default 120s from configs/system.yaml).
+                # Pure SYN retransmit on a fresh 0-payload flow within flow_idle_s does NOT restart.
+                if ckey in active_flows:
+                    cur = active_flows[ckey]
+                    reinit = False
+                    if is_syn_only and ((cur["flags_seen"] & 0x05) != 0 or len(cur["sizes"]) > 0):
+                        reinit = True
+                    elif idle_limit_s > 0.0 and (float(ts) - cur["last_seen_ts"]) > idle_limit_s:
+                        reinit = True
+                    if reinit:
+                        old_flow = active_flows.pop(ckey)
+                        if len(old_flow["sizes"]) > 0:
+                            completed_records.append(
+                                _finalize_flow(old_flow, early_n, feat_names, session_id, source, label_family, is_attack, domain)
+                            )
+                            instance_counts[ckey] += 1
 
                 if ckey not in active_flows:
                     inst_idx = instance_counts[ckey]
-                    instance_counts[ckey] += 1
                     active_flows[ckey] = {
                         "src_ip": src_ip,
                         "dst_ip": dst_ip,
@@ -218,6 +243,8 @@ def extract_flows_from_pcap(
                         "port_b": ckey[3],
                         "start_ts": float(ts),
                         "end_ts": float(ts),
+                        "last_seen_ts": float(ts),
+                        "flags_seen": 0,
                         "instance": inst_idx,
                         "sizes": [],
                         "dirs": [],
@@ -228,6 +255,8 @@ def extract_flows_from_pcap(
 
                 flow = active_flows[ckey]
                 flow["end_ts"] = float(ts)
+                flow["last_seen_ts"] = float(ts)
+                flow["flags_seen"] |= tcp_flags
                 if _detect_tls_record(raw_payload, sport, dport):
                     flow["encrypted"] = True
 
@@ -236,14 +265,6 @@ def extract_flows_from_pcap(
                     flow["sizes"].append(int(payload_len))
                     flow["dirs"].append(int(direction))
                     flow["timestamps"].append(float(ts))
-
-                # Emit on FIN/RST if flow has payload packets, or keep tracking until FIN/RST/new SYN
-                if is_fin_or_rst and ckey in active_flows:
-                    fin_flow = active_flows.pop(ckey)
-                    if len(fin_flow["sizes"]) > 0:
-                        completed_records.append(
-                            _finalize_flow(fin_flow, early_n, feat_names, session_id, source, label_family, is_attack, domain)
-                        )
             except Exception:
                 continue
 
@@ -266,6 +287,7 @@ def main():
     parser.add_argument("--label-family", default="benign")
     parser.add_argument("--is-attack", type=int, default=0)
     parser.add_argument("--domain", default="testbed")
+    parser.add_argument("--flow-idle-s", type=float, default=None, help="Override flow idle timeout (s); defaults to configs/system.yaml")
     parser.add_argument("--out", required=True, help="Output CSV path")
     args = parser.parse_args()
 
@@ -278,6 +300,7 @@ def main():
         label_family=args.label_family,
         is_attack=args.is_attack,
         domain=args.domain,
+        flow_idle_s=args.flow_idle_s,
     )
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     df = pd.DataFrame(records)
