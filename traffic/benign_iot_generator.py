@@ -183,7 +183,7 @@ def run_iot_device(
                 connections += 1
 
                 try:
-                    while time.time() - start < duration_s and msgs_in_conn < max_msgs_this_conn:
+                    while (msgs_in_conn == 0 or time.time() - start < duration_s) and msgs_in_conn < max_msgs_this_conn:
                         size = random.randint(*profile["payload_size"])
                         payload = _make_payload(device_id, profile_name, msg_count, size)
                         topic = f"iot/{profile_name}/{device_id}"
@@ -210,7 +210,7 @@ def run_iot_device(
                 connections += 1
 
                 try:
-                    while time.time() - start < duration_s and msgs_in_conn < max_msgs_this_conn:
+                    while (msgs_in_conn == 0 or time.time() - start < duration_s) and msgs_in_conn < max_msgs_this_conn:
                         size = random.randint(*profile["payload_size"])
                         body = _make_payload(device_id, profile_name, msg_count, size)
                         conn_hdr = "close" if (connection_type == "reconnect" or msgs_in_conn + 1 >= max_msgs_this_conn) else "keep-alive"
@@ -249,7 +249,7 @@ def run_iot_device(
                 connections += 1
 
                 try:
-                    while time.time() - start < duration_s and msgs_in_conn < max_msgs_this_conn:
+                    while (msgs_in_conn == 0 or time.time() - start < duration_s) and msgs_in_conn < max_msgs_this_conn:
                         sz_range = profile.get("legacy_payload_size", profile["payload_size"])
                         size = random.randint(*sz_range)
                         payload = _make_payload(device_id, profile_name, msg_count, size)

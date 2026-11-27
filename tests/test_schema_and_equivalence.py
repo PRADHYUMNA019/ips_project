@@ -375,3 +375,50 @@ def test_multi_checkpoint_equivalence():
     assert metrics["per_checkpoint"]["8"]["size_exact_match_rate"] == 1.0
     assert metrics["per_checkpoint"]["16"]["size_exact_match_rate"] == 1.0
 
+
+def test_ctypes_struct_field_offsets_and_python314_layout():
+    """Verify exact byte offsets & sizes match ebpf/ips_engine.c C structs and emit zero DeprecationWarnings."""
+    import sys
+    import warnings
+    from ips.engine.schema import FlowKey, VerdictEntry, CfgEntry, StatsEntry, make_early_flow_event_cls
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        ev_cls = make_early_flow_event_cls(16)
+    dep_msgs = [str(w.message) for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert dep_msgs == [], f"Unexpected DeprecationWarnings from schema creation: {dep_msgs}"
+
+    if sys.version_info >= (3, 14):
+        for cls in (FlowKey, VerdictEntry, CfgEntry, StatsEntry, ev_cls):
+            assert getattr(cls, "_layout_", None) == "ms"
+
+    # Exact byte-for-byte ABI match against ebpf/ips_engine.c __attribute__((packed)) structs
+    assert ctypes.sizeof(FlowKey) == 16
+    assert (FlowKey.ip_a.offset, FlowKey.ip_b.offset, FlowKey.port_a.offset, FlowKey.port_b.offset, FlowKey.proto.offset, FlowKey.pad.offset) == (0, 4, 8, 10, 12, 13)
+
+    assert ctypes.sizeof(VerdictEntry) == 16
+    assert (VerdictEntry.action.offset, VerdictEntry.pad.offset, VerdictEntry.expiry_ns.offset) == (0, 1, 8)
+
+    assert ctypes.sizeof(CfgEntry) == 16
+    assert (
+        CfgEntry.lan_ifindex.offset, CfgEntry.shed.offset, CfgEntry.debug.offset,
+        CfgEntry.tier0_enabled.offset, CfgEntry.pad.offset, CfgEntry.tier0_rate.offset, CfgEntry.tier0_capacity.offset,
+    ) == (0, 4, 5, 6, 7, 8, 12)
+
+    assert ctypes.sizeof(StatsEntry) == 72
+    assert (
+        StatsEntry.pkts_seen.offset, StatsEntry.pkts_bypassed.offset, StatsEntry.pkts_dropped_verdict.offset,
+        StatsEntry.pkts_dropped_tier0.offset, StatsEntry.events_emitted.offset, StatsEntry.ringbuf_drop_failures.offset,
+        StatsEntry.flow_insert_failures.offset, StatsEntry.ckpt_retry.offset, StatsEntry.ckpt_skipped_shed.offset,
+    ) == (0, 8, 16, 24, 32, 40, 48, 56, 64)
+
+    assert ctypes.sizeof(ev_cls) == 224
+    assert (
+        ev_cls.schema_version.offset, ev_cls.proto.offset, ev_cls.valid_len.offset,
+        ev_cls.flags_seen.offset, ev_cls.checkpoint_idx.offset, ev_cls.ip_a.offset, ev_cls.ip_b.offset,
+        ev_cls.port_a.offset, ev_cls.port_b.offset, ev_cls.initiator_ip.offset, ev_cls.initiator_port.offset,
+        ev_cls.pad2.offset, ev_cls.total_pkts.offset, ev_cls.total_bytes.offset, ev_cls.pad3.offset,
+        ev_cls.first_ts_ns.offset, ev_cls.last_ts_ns.offset, ev_cls.iat_ns.offset, ev_cls.sizes.offset, ev_cls.dirs.offset,
+    ) == (0, 4, 5, 6, 7, 8, 12, 16, 18, 20, 24, 26, 28, 32, 36, 40, 48, 56, 176, 208)
+
+

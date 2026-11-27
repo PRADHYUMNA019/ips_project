@@ -37,7 +37,7 @@ from ips.features import (
 )
 from ips.models.autoencoder import EarlyFlowAutoencoder, KitsuneStyleEnsemble
 from ips.models.evt import fit_evt_threshold, allocate_checkpoint_alpha_budget
-from ips.models.quantize import export_to_onnx, quantize_to_int8, compare_fp32_int8
+from ips.models.quantize import export_to_onnx, quantize_to_int8, compare_fp32_int8, score_masked_onnx
 from ips.smoke.synth import SMOKE_BANNER
 
 try:
@@ -184,14 +184,22 @@ def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 16,
 
     print(f"[Train] Splits (benign only): train={len(X_train)}, val={len(X_val)}, calib={len(X_calib)}, dim={input_dim}")
 
-    # 1. Global PyTorch Autoencoder (at full window early_n)
+    # 1. Global PyTorch Autoencoder (at full window early_n) + INT8 export BEFORE EVT calibration
+    #    so calibration thresholds match the exact INT8 ONNX model run by IPSEngine/eval_offline!
     ae_model, best_val_loss = train_autoencoder(X_train, X_val, input_dim=input_dim, epochs=epochs, seed=seed)
-    calib_scores, _ = ae_model.get_reconstruction_error(X_calib)
+    onnx_fp32 = os.path.join(model_dir, "autoencoder.onnx")
+    onnx_int8 = os.path.join(model_dir, "autoencoder_int8.onnx")
+    export_to_onnx(ae_model, input_dim, onnx_fp32)
+    quantize_to_int8(onnx_fp32, onnx_int8)
+    try:
+        calib_scores = score_masked_onnx(onnx_int8, X_calib)
+    except Exception:
+        calib_scores, _ = ae_model.get_reconstruction_error(X_calib)
     evt_001 = fit_evt_threshold(calib_scores, target_fpr=0.001)
     evt_01 = fit_evt_threshold(calib_scores, target_fpr=0.01)
 
     # 1b. Progressive Checkpoint Autoencoders (C1 / N7: checkpoints [4, 8, 16])
-    # Calibrate each checkpoint k on benign calibration flows that actually reach packet k (raw_valid_len >= k)
+    # Calibrate each checkpoint k on INT8 ONNX scores of benign calibration flows reaching packet k (raw_valid_len >= k)
     alpha_equal_001 = allocate_checkpoint_alpha_budget(0.001, checkpoints, scheme="equal")
     alpha_front_001 = allocate_checkpoint_alpha_budget(0.001, checkpoints, scheme="front_loaded")
     alpha_equal_01 = allocate_checkpoint_alpha_budget(0.01, checkpoints, scheme="equal")
@@ -215,17 +223,19 @@ def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 16,
         dim_k = 3 * ckpt_k + 8
 
         ae_k, loss_k = train_autoencoder(X_tr_k, X_val_k, input_dim=dim_k, epochs=epochs, seed=seed + ckpt_k)
-        cal_scores_k, _ = ae_k.get_reconstruction_error(X_cal_k)
+        ckpt_fp32 = os.path.join(model_dir, f"ae_ckpt_{ckpt_k}.onnx")
+        ckpt_int8 = os.path.join(model_dir, f"ae_ckpt_{ckpt_k}_int8.onnx")
+        export_to_onnx(ae_k, dim_k, ckpt_fp32)
+        quantize_to_int8(ckpt_fp32, ckpt_int8)
+        try:
+            cal_scores_k = score_masked_onnx(ckpt_int8, X_cal_k)
+        except Exception:
+            cal_scores_k, _ = ae_k.get_reconstruction_error(X_cal_k)
 
         evt_k_eq_001 = fit_evt_threshold(cal_scores_k, target_fpr=alpha_equal_001[ckpt_k])
         evt_k_fl_001 = fit_evt_threshold(cal_scores_k, target_fpr=alpha_front_001[ckpt_k])
         evt_k_eq_01 = fit_evt_threshold(cal_scores_k, target_fpr=alpha_equal_01[ckpt_k])
         evt_k_fl_01 = fit_evt_threshold(cal_scores_k, target_fpr=alpha_front_01[ckpt_k])
-
-        ckpt_fp32 = os.path.join(model_dir, f"ae_ckpt_{ckpt_k}.onnx")
-        ckpt_int8 = os.path.join(model_dir, f"ae_ckpt_{ckpt_k}_int8.onnx")
-        export_to_onnx(ae_k, dim_k, ckpt_fp32)
-        quantize_to_int8(ckpt_fp32, ckpt_int8)
 
         checkpoint_models[str(ckpt_k)] = {
             "checkpoint_n": ckpt_k,
@@ -284,11 +294,7 @@ def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 16,
     with open(if_pkl, "wb") as f:
         pickle.dump(iso_forest, f)
 
-    # 5. Export ONNX FP32 and INT8 & compare
-    onnx_fp32 = os.path.join(model_dir, "autoencoder.onnx")
-    onnx_int8 = os.path.join(model_dir, "autoencoder_int8.onnx")
-    export_to_onnx(ae_model, input_dim, onnx_fp32)
-    quantize_to_int8(onnx_fp32, onnx_int8)
+    # 5. Compare FP32 vs INT8 ONNX models (already exported above before EVT calibration)
     quant_comparison = compare_fp32_int8(onnx_fp32, onnx_int8, input_dim, X_calib)
 
     # Save calibration scores for calibration curve generation

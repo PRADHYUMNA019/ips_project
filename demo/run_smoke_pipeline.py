@@ -141,7 +141,7 @@ def run_mock_closed_loop_demo(card_path: str, early_n: int = 16, seed: int = 42)
     # 2. Benign flow (small periodic MQTT sensor at 10s interval, client-first (pkt_i-1)%2 -> continues at k=4,8, BYPASS at k=16)
     for pkt_i in range(1, 20):
         act, ev = backend.simulate_packet(
-            "10.0.1.11", 51001, "10.0.2.10", 8883, "TCP", 56 if (pkt_i - 1) % 2 == 1 else 64, (pkt_i - 1) % 2, t0 + pkt_i * 10_000_000_000
+            "10.0.1.11", 51001, "10.0.2.10", 8883, "TCP", 48 if (pkt_i - 1) % 2 == 1 else 64, (pkt_i - 1) % 2, t0 + pkt_i * 10_000_000_000
         )
         if ev is not None:
             d = engine.handle_early_flow_event(ev, now_ns=t0 + pkt_i * 10_000_000_000)

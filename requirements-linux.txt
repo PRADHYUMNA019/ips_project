@@ -1,13 +1,15 @@
-# Linux System & Kernel Requirements for ips_project
+# Linux System & Python Requirements for ips_project
 #
-# Install system packages on Ubuntu (22.04 / 24.04):
+# 1. Install system & kernel packages on Ubuntu (22.04 / 24.04):
 #
 # sudo apt-get update && sudo apt-get install -y \
 #     clang \
 #     llvm \
 #     libbpf-dev \
+#     libelf-dev \
 #     linux-tools-common \
 #     linux-tools-generic \
+#     linux-headers-$(uname -r) \
 #     bpfcc-tools \
 #     python3-bpfcc \
 #     iproute2 \
@@ -19,13 +21,15 @@
 #     tcpdump \
 #     tshark \
 #     jq \
+#     bc \
 #     openssl \
 #     make \
 #     python3-pip \
 #     python3-venv
 #
 # Note on BCC:
-#   python3-bpfcc is installed from system apt, not pip.
-#   Ensure the kernel headers match the running kernel:
-#   sudo apt-get install -y linux-headers-$(uname -r)
-
+#   python3-bpfcc is installed from system apt (not pip). When running live eBPF/XDP
+#   via BCC inside a virtualenv, create the venv with `--system-site-packages`.
+#
+# 2. Install all Python runtime, ML, ONNX, packet-parsing, and test dependencies:
+-r requirements.txt

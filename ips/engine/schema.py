@@ -8,6 +8,7 @@ Reads configs/system.yaml and generates:
      with explicit alignment so changing system.early_n in YAML cannot desynchronize C and Python.
 """
 import os
+import sys
 import socket
 import struct
 import ctypes
@@ -134,6 +135,8 @@ class FlowKey(ctypes.Structure):
     ip_a, ip_b, port_a, port_b are stored in host byte order (u32 / u16)
     with (ip_a, port_a) <= (ip_b, port_b).
     """
+    if sys.version_info >= (3, 14):
+        _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
         ("ip_a", ctypes.c_uint32),
@@ -147,6 +150,8 @@ class FlowKey(ctypes.Structure):
 
 class VerdictEntry(ctypes.Structure):
     """Verdict map value (16 bytes, 8-byte aligned)."""
+    if sys.version_info >= (3, 14):
+        _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
         ("action", ctypes.c_uint8),       # 1 = BYPASS, 2 = DROP
@@ -157,6 +162,8 @@ class VerdictEntry(ctypes.Structure):
 
 class CfgEntry(ctypes.Structure):
     """Runtime kernel configuration in single-entry BPF array (16 bytes)."""
+    if sys.version_info >= (3, 14):
+        _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
         ("lan_ifindex", ctypes.c_uint32),     # interface index of v-lan-gw
@@ -171,6 +178,8 @@ class CfgEntry(ctypes.Structure):
 
 class StatsEntry(ctypes.Structure):
     """Per-CPU kernel telemetry counters (72 bytes)."""
+    if sys.version_info >= (3, 14):
+        _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
         ("pkts_seen", ctypes.c_uint64),
@@ -243,6 +252,8 @@ def make_early_flow_event_cls(early_n: int = 12):
         fields.append(("tail_pad", ctypes.c_uint8 * tail_pad))
 
     class EarlyFlowEvent(ctypes.Structure):
+        if sys.version_info >= (3, 14):
+            _layout_ = "ms"
         _pack_ = 1
         _fields_ = fields
 

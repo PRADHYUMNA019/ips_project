@@ -6,7 +6,7 @@
 | Artefact Path | Evidence Type | Description | Regeneration Command |
 |---|---|---|---|
 | [`demo/run_demo.ps1`](../run_demo.ps1) | `UNIT TEST` + `SYNTHETIC SMOKE` | One-command Windows guide-review demo runner (runs from any directory) | `powershell -ExecutionPolicy Bypass -File demo\run_demo.ps1` |
-| [`demo/evidence/logs/pytest.log`](logs/pytest.log) | `UNIT TEST` | Timestamped raw output of full pytest suite (`73 passed, 0 failed`) | `python -m pytest -q` |
+| [`demo/evidence/logs/pytest.log`](logs/pytest.log) | `UNIT TEST` | Timestamped raw output of full pytest suite (`74 passed, 0 failed, 0 warnings`) | `python -m pytest -v` |
 | [`demo/evidence/logs/compileall.log`](logs/compileall.log) | `UNIT TEST` | Timestamped Python bytecode syntax check across repository (`rc=0`) | `python -m compileall -q .` |
 | [`demo/evidence/logs/check_claims.log`](logs/check_claims.log) | `UNIT TEST` | Timestamped forbidden-wording & 3-doc title consistency audit (`0` violations) | `python audit/check_claims.py` |
 | [`demo/evidence/logs/mutation_runner.log`](logs/mutation_runner.log) | `UNIT TEST` | Timestamped adversarial mutation suite (`18/18 KILLED, 0 survived, 0 invalid`, incl. `M17` IAT norm) | `python audit/mutation_runner.py` |

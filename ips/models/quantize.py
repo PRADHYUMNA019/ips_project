@@ -9,8 +9,12 @@ Measures:
 """
 import os
 import time
+import logging
+import warnings
 from typing import Dict, Any, Tuple
 import numpy as np
+
+from ips.features import build_valid_mask_matrix
 
 try:
     import torch
@@ -21,14 +25,19 @@ try:
     import onnx
     import onnxruntime as ort
     from onnxruntime.quantization import quantize_dynamic, QuantType
+    try:
+        from onnxruntime.quantization.shape_inference import quant_pre_process
+    except ImportError:
+        quant_pre_process = None
 except ImportError:
     onnx = None
     ort = None
     quantize_dynamic = None
+    quant_pre_process = None
 
 
 def export_to_onnx(pytorch_model, input_dim: int, onnx_path: str):
-    """Export PyTorch Autoencoder to ONNX format."""
+    """Export PyTorch Autoencoder to ONNX format without legacy TorchScript deprecation noise."""
     if torch is None:
         raise RuntimeError("torch required to export ONNX")
     os.makedirs(os.path.dirname(os.path.abspath(onnx_path)), exist_ok=True)
@@ -43,36 +52,80 @@ def export_to_onnx(pytorch_model, input_dim: int, onnx_path: str):
         output_names=["output"],
         dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
     )
-    try:
-        torch.onnx.export(
-            pytorch_model,
-            dummy_input,
-            onnx_path,
-            dynamo=False,
-            **export_kwargs,
-        )
-    except TypeError:
-        torch.onnx.export(
-            pytorch_model,
-            dummy_input,
-            onnx_path,
-            **export_kwargs,
-        )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        try:
+            torch.onnx.export(
+                pytorch_model,
+                dummy_input,
+                onnx_path,
+                dynamo=False,
+                **export_kwargs,
+            )
+        except TypeError:
+            torch.onnx.export(
+                pytorch_model,
+                dummy_input,
+                onnx_path,
+                **export_kwargs,
+            )
     return onnx_path
 
 
 def quantize_to_int8(fp32_onnx_path: str, int8_onnx_path: str) -> str:
-    """Quantize FP32 ONNX model to INT8 using dynamic quantization."""
+    """Pre-process FP32 ONNX graph and quantize to INT8 using dynamic quantization."""
     if quantize_dynamic is None:
         raise RuntimeError("onnxruntime.quantization is required for INT8 quantization")
     os.makedirs(os.path.dirname(os.path.abspath(int8_onnx_path)), exist_ok=True)
 
-    quantize_dynamic(
-        model_input=fp32_onnx_path,
-        model_output=int8_onnx_path,
-        weight_type=QuantType.QInt8,
-    )
+    prep_path = int8_onnx_path + ".prep.onnx"
+    src_for_quant = fp32_onnx_path
+    try:
+        if quant_pre_process is not None:
+            try:
+                quant_pre_process(
+                    input_model_path=fp32_onnx_path,
+                    output_model_path=prep_path,
+                    skip_symbolic_shape=True,
+                )
+                if os.path.exists(prep_path):
+                    src_for_quant = prep_path
+            except Exception:
+                src_for_quant = fp32_onnx_path
+
+        root_logger = logging.getLogger()
+        prev_level = root_logger.level
+        try:
+            if src_for_quant == fp32_onnx_path:
+                root_logger.setLevel(logging.ERROR)
+            quantize_dynamic(
+                model_input=src_for_quant,
+                model_output=int8_onnx_path,
+                weight_type=QuantType.QInt8,
+            )
+        finally:
+            root_logger.setLevel(prev_level)
+    finally:
+        if os.path.exists(prep_path):
+            try:
+                os.remove(prep_path)
+            except OSError:
+                pass
     return int8_onnx_path
+
+
+def score_masked_onnx(onnx_path: str, X: np.ndarray) -> np.ndarray:
+    """Compute masked per-sample reconstruction MSE over positions < valid_len using an ONNX session."""
+    if ort is None:
+        raise RuntimeError("onnxruntime is required for score_masked_onnx")
+    mask = build_valid_mask_matrix(X)
+    x_masked = (X.astype(np.float32) * mask)
+    sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+    inp_name = sess.get_inputs()[0].name
+    out = sess.run(None, {inp_name: x_masked})[0]
+    sq_err = ((x_masked - out) ** 2) * mask
+    denom = np.maximum(1.0, mask.sum(axis=1))
+    return (sq_err.sum(axis=1) / denom).astype(np.float32)
 
 
 def benchmark_onnx_latency(onnx_path: str, input_dim: int, n_warmup: int = 20, n_iter: int = 100) -> Dict[str, float]:

@@ -34,11 +34,11 @@
 - `tests/test_manifest.py`: 1 passed
 - `tests/test_models.py`: 13 passed
 - `tests/test_reproduce.py`: 2 passed
-- `tests/test_schema_and_equivalence.py`: 9 passed
+- `tests/test_schema_and_equivalence.py`: 10 passed
 - `tests/test_shell_permissions.py`: 2 passed
 - `tests/test_splits_and_joins.py`: 3 passed
 - `tests/test_topology_parse.py`: 3 passed
-- **Total V1 Unit Tests**: **73 passed, 0 failed** (`18/18` adversarial mutants KILLED)
+- **Total V1 Unit Tests**: **74 passed, 0 failed, 0 warnings** (`18/18` adversarial mutants KILLED)
 
 ## Not Run Here (V2 Linux Required / V3 Real Data Required)
 - `sudo bash scripts/verify_linux.sh` (Stages S0, S2–S4, S6, S6b, S6c require Linux root + network namespaces + BCC + `tc netem`)

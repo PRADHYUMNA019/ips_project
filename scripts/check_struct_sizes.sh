@@ -9,6 +9,9 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 echo "=== Verifying C vs Python ctypes Struct Sizes & Layouts ==="
 
 PYTHON_BIN="${PYTHON:-python3}"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 && command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+fi
 
 # 1. Run Python schema size inspection
 PY_SIZES=$($PYTHON_BIN -c '

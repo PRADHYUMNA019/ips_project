@@ -429,9 +429,10 @@ def test_engine_loads_configured_model_card_and_benign_reaches_bypass_p9_1e(tmp_
     tr_csv = str(tmp_path / "tr.csv")
     ca_csv = str(tmp_path / "ca.csv")
     mdir = str(tmp_path / "models")
-    generate_smoke_dataset(n_benign=120, n_attack=0, early_n=16, session_id="s1", out_csv=tr_csv, seed=42)
-    generate_smoke_dataset(n_benign=100, n_attack=0, early_n=16, session_id="s2", out_csv=ca_csv, seed=43)
-    train_pipeline(data_path=tr_csv, calib_path=ca_csv, early_n=16, checkpoints=[4, 8, 16], epochs=35, seed=42, model_dir=mdir)
+    # Use >=240 calibration flows so EVT POT has >=24 excesses (>= effective_min_u=20) at 90th percentile
+    generate_smoke_dataset(n_benign=240, n_attack=0, early_n=16, session_id="s1", out_csv=tr_csv, seed=42)
+    generate_smoke_dataset(n_benign=240, n_attack=0, early_n=16, session_id="s2", out_csv=ca_csv, seed=43)
+    train_pipeline(data_path=tr_csv, calib_path=ca_csv, early_n=16, checkpoints=[4, 8, 16], epochs=50, seed=42, model_dir=mdir)
     card_path = str(tmp_path / "models" / "model_card.json")
 
     cfg = {
@@ -455,10 +456,11 @@ def test_engine_loads_configured_model_card_and_benign_reaches_bypass_p9_1e(tmp_
     assert atk_verdicts[0] == "DROP", f"Attack exfil flow should DROP at k=4, got {atk_verdicts}"
 
     benign_verdicts = []
+    # Match synth.py benign sensor profile: client-first (0,1,0,1), sizes (64B up / 48B down), 10s (10_000_000_000 ns) cadence
     for pkt_i in range(1, 18):
         _, ev = backend.simulate_packet(
             "10.0.1.11", 51001, "10.0.2.10", 8883, "TCP",
-            56 if (pkt_i - 1) % 2 == 1 else 64, (pkt_i - 1) % 2, t0 + pkt_i * 10_000_000_000,
+            48 if (pkt_i - 1) % 2 == 1 else 64, (pkt_i - 1) % 2, t0 + pkt_i * 10_000_000_000,
         )
         if ev is not None:
             d = engine.handle_early_flow_event(ev, now_ns=t0 + pkt_i * 10_000_000_000)
