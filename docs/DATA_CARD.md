@@ -20,8 +20,9 @@ Every flow table produced by `ips/offline/pcap_to_flows.py` or `datasets/adapter
 
 - **CESNET-TLS-Year22 (`datasets/adapters/cesnet_adapter.py`)**:
   - Column names (`PPI_PKT_LENGTHS`, `PPI_PKT_DIRECTIONS`, `PPI_PKT_TIMES` / `sizes`, `dirs`, `iats`) and inter-packet time units (seconds vs milliseconds) are marked **`UNVERIFIED SCHEMA`** until inspected against a downloaded CESNET parquet/csv file. Adapter emits a runtime warning printing actual columns found.
-- **TQH-C2 Testbed D (`datasets/adapters/tqh_adapter.py`)**:
-  - Raw pcaps (`TQH-C2_pcap_D_merlin_h2.zip`) are parsed directly by `ips/offline/pcap_to_flows.py` (verified header layout). Pre-extracted CSV columns in `TQH-C2_features_D.zip` are marked **`UNVERIFIED SCHEMA`** and emit a runtime warning if used directly.
+- **TQH-C2 Testbed D (`datasets/adapters/tqh_adapter.py`, Zenodo 21523144, CC-BY-4.0)**:
+  - **VERIFIED SCHEMA (Flow Summaries)**: `TQH-C2_features_D.zip` contains 12 per-cell Parquet files (`D_i{30,300,1800,3600}_j{0,30,70}.parquet`) and combined `features_D/testbed_D.parquet` (11,528 rows, 27 verified Zeek-style summary columns: `ts, uid, orig_h, resp_h, duration, orig_bytes, resp_bytes, orig_pkts, resp_pkts, orig_p, resp_p, proto, conn_state, history, orig_ip_bytes, resp_ip_bytes, missed_bytes, ja4, ja4s, ja4h, profile, encryption_profile, interval_s, jitter_pct, capture_id, label_raw, y`). `TQH-C2_labels_D.zip` contains `D_i*_j*/labeled.jsonl` + `manifest.json`.
+  - **Granularity Note**: `TQH-C2_features_D.zip` does **not** contain per-packet early-window arrays (`size_0..N-1`, `dir_0..N-1`, `iat_0..N-2`). Extracting canonical `3N+8` per-packet vectors requires parsing `TQH-C2_pcap_D_merlin_h2.zip` (1.82 GB) via `adapt_tqh_pcap()` (Prompt 7 on Linux VM).
 - **Kitsune (`datasets/adapters/kitsune_adapter.py`)**:
   - Raw pcaps are parsed via `ips/offline/pcap_to_flows.py` using IP/TCP header lengths (handling Kitsune's 200-byte packet truncation). Pre-extracted CSV columns are marked **`UNVERIFIED SCHEMA`**.
 - **Aposemat IoT-23 (`datasets/adapters/iot23_adapter.py`)**:

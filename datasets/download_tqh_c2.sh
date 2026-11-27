@@ -16,7 +16,8 @@ TARGET_DIR="$SCRIPT_DIR/raw/tqh_c2"
 mkdir -p "$TARGET_DIR"
 cd "$TARGET_DIR"
 
-# UNVERIFIED – check on the Zenodo page if Zenodo record path changes
+# Verified against Zenodo API (2026-11-26): record 21523144 is TQH-C2 v1.2.0 (CC-BY-4.0).
+# (Newer v1.2.5 is also published at Zenodo record 23905375; record 19365445 is unrelated.)
 ZENODO_BASE="${ZENODO_BASE:-https://zenodo.org/records/21523144/files}"
 
 FILES=(

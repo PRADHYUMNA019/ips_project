@@ -36,3 +36,24 @@
 - **PowerShell demo runner from external working directory (`C:\Users\Dell`)**:
   - Command: `Push-Location C:\Users\Dell; powershell -ExecutionPolicy Bypass -File C:\Users\Dell\finalyr_project\demo\run_demo.ps1`
   - Output: `FINAL DEMO SUMMARY (Total: 71.1s)` / `OVERALL: PASS (UNIT TEST + SYNTHETIC SMOKE ONLY — No Linux/kernel/real-testbed result)` (exit code `0`)
+
+---
+
+## Phase 3 — Real Public Data Downloads, Adapter Verification & Dataset Audit (`REAL PUBLIC DATA`)
+
+- **Zenodo API verification for TQH-C2 (record `21523144`)**:
+  - Command: `python -c "... urllib.request.urlopen('https://zenodo.org/api/records/21523144') ..."`
+  - Output: `title: TQH-C2: An Encrypted Command-and-Control Traffic Dataset Across Protocols and Encryption Layers` / `license: {'id': 'cc-by-4.0'}` / `TQH-C2_features_D.zip 1222048` / `TQH-C2_labels_D.zip 791480`
+- **TQH-C2 Testbed D small-file download & SHA-256 verification**:
+  - Command: `python datasets/download_tqh_c2_win.py`
+  - Output: `[PASS] README_v120.md` / `[PASS] TQH-C2_features_D.zip` / `[PASS] TQH-C2_labels_D.zip` (all 3 SHA-256 matched `SHA256SUMS_v120.txt` in `D:\ips_data\tqh_c2`)
+- **TQH-C2 Testbed D real Parquet audit & CC-BY-4.0 fixture test**:
+  - Command: `python -m pytest tests/test_dataset_adapters.py -v`
+  - Output: `7 passed in 1.05s` (including `test_tqh_verified_parquet_summary_fixture` with 0 `UNVERIFIED SCHEMA` warnings)
+  - Audit summary (`demo/evidence/real/tqh_c2_audit.csv`): `11,528` total rows (`9,564` benign, `1,964` `malicious_c2`), `100.0% / 98.1% / 97.7%` of C2 flows reach estimated ≥ 4 / 8 / 16 payload packets (median duration `31.02 s`).
+- **IoT-23 benign honeypot downloads (`CTU-Honeypot-Capture-4-1`, `5-1`, `7-1`)**:
+  - Command: `python datasets/download_iot23_win.py` (via Windows Schannel `curl.exe` into `D:\ips_data\iot23`)
+  - Output: 8 pcaps totaling `512.97 MB` (`4-1`: 4.38 MB decompressed, `5-1`: 363.71 MB, `7-1`: 144.88 MB across `Somfy-01..06`).
+- **IoT-23 benign streaming `dpkt` pcap audit (`demo/evidence/real/iot23_benign_audit.csv`)**:
+  - Command: `python demo/audit_iot23_real.py`
+  - Output: `1,254` total flows (`4-1`: 353, `5-1`: 761, `7-1`: 140), `139` TLS (`11.08%`), reaching checkpoints `k=4/8/16`: `22.01% / 10.13% / 6.54%`.

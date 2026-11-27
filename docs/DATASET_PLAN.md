@@ -30,12 +30,11 @@
 ## 3. Verified vs Unverified Facts Checklist
 
 ### Verified Facts
-- **TQH-C2 v1.2.0 Testbed D**: `TQH-C2_pcap_D_merlin_h2.zip` (1.8 GB, Merlin HTTP/2-over-TLS), `TQH-C2_features_D.zip` (1.2 MB), `TQH-C2_labels_D.zip` (0.8 MB), `SHA256SUMS_v120.txt`. Testbed C is plain HTTP with AES payload (not TLS).
-- **IoT-23 Benign vs Malicious IDs**: `CTU-Honeypot-Capture-4-1` (Philips Hue), `CTU-Honeypot-Capture-5-1` (Amazon Echo), and `CTU-Honeypot-Capture-7-1` (Somfy door lock) are the 3 benign captures; `CTU-IoT-Malware-Capture-7-1` is malicious (`Linux.Mirai`). The 8.7 GB "small" archive has Zeek logs only (no pcaps).
+- **TQH-C2 v1.2.0 Testbed D (Zenodo `21523144`, CC-BY-4.0; verified via Zenodo API & SHA-256)**: `TQH-C2_pcap_D_merlin_h2.zip` (1,823,494,055 B / 1.70 GiB, Merlin HTTP/2-over-TLS), `TQH-C2_features_D.zip` (1,222,048 B / 1.17 MiB — Zeek-style Parquet flow summaries, 11,528 rows × 27 cols, 9,564 benign + 1,964 `malicious_c2`), `TQH-C2_labels_D.zip` (791,480 B / 0.75 MiB — `labeled.jsonl` + `manifest.json`), `SHA256SUMS_v120.txt` (906 B). Testbed C is plain HTTP with AES payload (not TLS). Note: record `19365445` is unrelated; v1.2.5 is at `23905375`.
+- **IoT-23 Benign vs Malicious IDs**: `CTU-Honeypot-Capture-4-1` (Philips Hue, `2018-10-25-14-06-32-192.168.1.132.pcap.xz`, 0.36 MB), `CTU-Honeypot-Capture-5-1` (Amazon Echo, `2018-09-21-capture.pcap`, 363.71 MB), and `CTU-Honeypot-Capture-7-1` (Somfy door lock, `Somfy-01..06/*.pcap`) are the 3 benign captures; `CTU-IoT-Malware-Capture-7-1` is malicious (`Linux.Mirai`). The 8.7 GB "small" archive has Zeek logs only (no pcaps).
 - **Kitsune Snaplen**: Packets in Kitsune pcaps are truncated at 200 bytes; IP/TCP header lengths preserve true payload size.
 
 ### Unverified Facts (Must Check on Download)
 - Exact column names and IPT time units (seconds vs milliseconds vs microseconds) inside CESNET-TLS-Year22 parquet/CSV files (`UNVERIFIED SCHEMA` warning in `datasets/adapters/cesnet_adapter.py`).
 - Exact flow counts per weekly CESNET file (read `stats-dataset.json` after download; never state flow counts from memory).
-- Exact Zenodo download URL path if record `21523144` redirects.
 

@@ -8,14 +8,26 @@ plus standard flow-key metadata columns.
 """
 import os
 import sys
+import io
+import zipfile
 import warnings
-from typing import Dict, Any
+from typing import Dict, Any, Set
 import pandas as pd
 
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
 from ips.features import build_early_vector, get_feature_names
 from ips.offline.pcap_to_flows import extract_flows_from_pcap
+
+# Verified against Zenodo record 21523144 (TQH-C2 v1.2.0, CC-BY-4.0, features_D/testbed_D.parquet)
+VERIFIED_TQH_PARQUET_COLUMNS: Set[str] = {
+    "ts", "uid", "orig_h", "resp_h", "duration",
+    "orig_bytes", "resp_bytes", "orig_pkts", "resp_pkts",
+    "orig_p", "resp_p", "proto", "conn_state", "history",
+    "orig_ip_bytes", "resp_ip_bytes", "missed_bytes",
+    "ja4", "ja4s", "ja4h", "profile", "encryption_profile",
+    "interval_s", "jitter_pct", "capture_id", "label_raw", "y",
+}
 
 
 def adapt_tqh_record(
@@ -58,6 +70,42 @@ def adapt_tqh_record(
     }
     for fname, val in zip(feat_names, vec):
         out[fname] = float(val)
+    return out
+
+
+def load_tqh_parquet_summary(filepath: str, member: str = "features_D/testbed_D.parquet") -> pd.DataFrame:
+    """
+    Load verified Zeek-style flow summary table from TQH-C2 Testbed D (Zenodo 21523144).
+    Supports .parquet, .zip (containing features_D/testbed_D.parquet), or .json fixture.
+    NOTE: TQH-C2_features_D.zip contains flow-level aggregates (orig_pkts/resp_pkts/duration/ja4),
+    NOT per-packet early-window arrays. For 3N+8 per-packet vectors, use adapt_tqh_pcap() on the raw pcap.
+    """
+    if filepath.endswith(".zip"):
+        with zipfile.ZipFile(filepath) as zf:
+            with zf.open(member) as f:
+                df = pd.read_parquet(io.BytesIO(f.read()))
+    elif filepath.endswith(".json"):
+        df = pd.read_json(filepath)
+    else:
+        df = pd.read_parquet(filepath)
+
+    missing = VERIFIED_TQH_PARQUET_COLUMNS - set(df.columns)
+    if missing:
+        warnings.warn(
+            f"UNVERIFIED SCHEMA [TQH-C2 Parquet]: missing expected columns {sorted(missing)} in {os.path.basename(filepath)}.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    out = df.copy()
+    out["total_pkts"] = out["orig_pkts"].fillna(0).astype(int) + out["resp_pkts"].fillna(0).astype(int)
+    out["total_bytes"] = out["orig_bytes"].fillna(0.0) + out["resp_bytes"].fillna(0.0)
+    out["is_attack"] = out["y"].astype(int)
+    out["label_family"] = out["label_raw"].astype(str).map(
+        lambda v: "A3_c2" if "c2" in v.lower() or "malicious" in v.lower() else "benign"
+    )
+    out["source"] = "real-public-tqh"
+    out["domain"] = "tqh-c2-d"
     return out
 
 

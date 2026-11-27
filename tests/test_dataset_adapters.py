@@ -17,7 +17,7 @@ sys.path.insert(0, REPO_DIR)
 from ips.features import split_metadata_and_features, METADATA_COLUMNS
 from datasets.audit_pcap import is_tls_handshake, is_plaintext_marker, audit_single_pcap
 from datasets.adapters.cesnet_adapter import adapt_cesnet_record, load_and_adapt_cesnet
-from datasets.adapters.tqh_adapter import adapt_tqh_record
+from datasets.adapters.tqh_adapter import adapt_tqh_record, load_tqh_parquet_summary, VERIFIED_TQH_PARQUET_COLUMNS
 from datasets.adapters.kitsune_adapter import adapt_kitsune_record
 from datasets.adapters.iot23_adapter import adapt_iot23_record, validate_iot23_capture_label
 
@@ -133,3 +133,29 @@ def test_iot23_adapter_and_mirai_guard():
     # Attempting to label CTU-IoT-Malware-Capture-7-1 (Linux.Mirai) as benign must fail loudly!
     with pytest.raises(ValueError, match="CRITICAL A3 LABEL VIOLATION"):
         validate_iot23_capture_label("CTU-IoT-Malware-Capture-7-1", is_attack=0)
+
+
+def test_tqh_verified_parquet_summary_fixture(tmp_path):
+    """P8 §3.2: Verify TQH-C2 Testbed D adapter against real CC-BY-4.0 6-row fixture without schema warnings."""
+    fixture_path = os.path.join(REPO_DIR, "tests", "fixtures", "tqh_c2_d_sample.json")
+    assert os.path.exists(fixture_path), "Missing real TQH-C2 CC-BY-4.0 fixture"
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        df = load_tqh_parquet_summary(fixture_path)
+        unverified_warns = [x for x in w if "UNVERIFIED SCHEMA" in str(x.message)]
+        assert len(unverified_warns) == 0, f"Verified TQH-C2 columns should not warn: {unverified_warns}"
+
+    assert len(df) == 6
+    assert set(VERIFIED_TQH_PARQUET_COLUMNS).issubset(set(df.columns))
+    assert int((df["is_attack"] == 1).sum()) == 3
+    assert int((df["is_attack"] == 0).sum()) == 3
+    assert (df["total_pkts"] == df["orig_pkts"] + df["resp_pkts"]).all()
+    assert set(df["label_family"].unique()) == {"A3_c2", "benign"}
+
+    # Missing verified column must emit UNVERIFIED SCHEMA warning
+    bad_path = str(tmp_path / "bad_tqh.json")
+    df.drop(columns=["ja4"]).to_json(bad_path, orient="records")
+    with pytest.warns(UserWarning, match="UNVERIFIED SCHEMA"):
+        load_tqh_parquet_summary(bad_path)
+
