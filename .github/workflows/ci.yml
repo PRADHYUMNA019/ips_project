@@ -1,0 +1,134 @@
+---
+name: CI
+
+"on":
+  push:
+    branches:
+      - p10-complete
+      - p9-fixes
+      - p8-demo
+      - wp0-fix-30pct
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: "python (unit + property tests, static checks, smoke determinism)"
+    runs-on: ubuntu-24.04
+    env:
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install CPU PyTorch and project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Ruff lint and format check
+        run: |
+          python -m ruff check .
+          python -m ruff format --check .
+
+      - name: Mypy static type check
+        run: |
+          python -m mypy ips datasets audit demo --ignore-missing-imports --explicit-package-bases
+
+      - name: Claims, title, and C/Python schema consistency audit
+        run: |
+          python audit/check_claims.py
+
+      - name: Pytest suite with branch coverage
+        run: |
+          python -m pytest -q --cov=ips --cov=datasets --cov-branch --cov-report=term-missing
+
+      - name: Time-bounded adversarial mutation check
+        run: |
+          python audit/mutation_runner.py --only M1,M2,M7,M10,M13,M18,M23,M27
+
+      - name: Smoke pipeline determinism check (2 runs byte-identical)
+        run: |
+          python demo/run_smoke_pipeline.py --epochs 10 --check-determinism
+
+  kernel-compile:
+    name: "kernel-compile (compile only — V2-compile, NOT verifier/runtime)"
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Clang, LLVM, libbpf, and bpftool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libbpf-dev linux-headers-generic linux-tools-common || true
+
+      - name: Compile ebpf/xdp_v1.c and ebpf/ips_engine.c (compile only)
+        run: |
+          mkdir -p build/ebpf
+          clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -Wall -Wextra \
+            -Iebpf/stubs -c ebpf/xdp_v1.c -o build/ebpf/xdp_v1.o
+          clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -DIPS_STANDALONE_BPF_BUILD -Wall -Wextra \
+            -Iebpf -Iebpf/stubs -include ebpf/stubs/bcc_standalone_shim.h \
+            -c ebpf/ips_engine.c -o build/ebpf/ips_engine.o
+          llvm-objdump -h build/ebpf/xdp_v1.o build/ebpf/ips_engine.o | tee build/ebpf/objdump_sections.txt
+
+      - name: Upload compiled BPF object artefacts (compile only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpf-compiled-objects
+          path: build/ebpf/
+
+  kernel-load:
+    name: "kernel-load (EXPERIMENTAL — optional hosted-runner verifier/veth probe)"
+    needs: kernel-compile
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download compiled BPF objects
+        uses: actions/download-artifact@v4
+        with:
+          name: ebpf-compiled-objects
+          path: build/ebpf/
+
+      - name: Probe bpftool verifier load & generic XDP veth attach (experimental)
+        run: |
+          mkdir -p build/verifier_probe
+          {
+            echo "=== EXPERIMENTAL HOSTED-RUNNER BPF VERIFIER PROBE ==="
+            uname -a
+            sudo bpftool version || true
+            sudo mount -t bpf bpf /sys/fs/bpf 2>/dev/null || true
+            sudo bpftool -d prog load build/ebpf/xdp_v1.o /sys/fs/bpf/ci_xdp_v1 type xdp 2>&1 \
+              || echo "xdp_v1 load not permitted or unsupported on hosted runner"
+            sudo bpftool -d prog load build/ebpf/ips_engine.o /sys/fs/bpf/ci_ips_engine type xdp 2>&1 \
+              || echo "ips_engine standalone shim load not permitted or requires BCC runtime on hosted runner"
+            sudo ip link add veth-ci0 type veth peer name veth-ci1 2>&1 || true
+            if [ -e /sys/fs/bpf/ci_xdp_v1 ]; then
+              sudo ip link set dev veth-ci0 xdpgeneric pinned /sys/fs/bpf/ci_xdp_v1 2>&1 || true
+              sudo ip link show dev veth-ci0 || true
+              sudo ip link set dev veth-ci0 xdpgeneric off 2>&1 || true
+            fi
+            sudo ip link del veth-ci0 2>/dev/null || true
+            sudo rm -f /sys/fs/bpf/ci_xdp_v1 /sys/fs/bpf/ci_ips_engine 2>/dev/null || true
+          } | tee build/verifier_probe/verifier_output.log
+
+      - name: Upload experimental verifier probe log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebpf-experimental-verifier-log
+          path: build/verifier_probe/

@@ -15,7 +15,10 @@ This document records architectural, experimental, and empirical limitations of 
 
 ---
 
-## 2. Kernel & Engine Toolchain (Finding F15)
+## 2. Kernel & Engine Toolchain (Finding F15 & Static Verification Status)
+- **Kernel Never Executed Yet (`V2-compile` Only — Prompt 10 §2.5)**:
+  - `ebpf/ips_engine.c` and `ebpf/xdp_v1.c` have been statically syntax-checked and compiled to eBPF ELF bytecode (`zig cc -target bpfel-freestanding -O2 -g -Wall -Wextra -Wsign-compare`, `0` warnings), verified against 9 static BPF source invariants (`ips/engine/bpf_source_checker.py`), and checked for randomized trace equivalence against `MockBPFBackend` (`ips/engine/c_control_flow_model.py`).
+  - However, **neither eBPF program has been loaded into a running Linux kernel BPF verifier or executed on live packets yet (`V2`)**. Static compilation (`V2-compile`) does not substitute for runtime kernel verification (deferred to Prompt 7 in an Ubuntu 22.04/24.04 VM).
 - **BCC Runtime Clang Dependency**:
   - The user-space engine utilizes BCC (`python3-bpfcc`), which requires Clang, LLVM, and Linux kernel header packages (`linux-headers-$(uname -r)`) to compile eBPF C code at runtime initialization.
   - This compiler toolchain adds ~150–250 MB of disk overhead and initial startup latency, which conflicts with minimal edge firmware constraints.

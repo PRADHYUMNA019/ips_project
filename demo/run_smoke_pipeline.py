@@ -587,6 +587,8 @@ def main():
         print(f"\n[DETERMINISM CHECK] {n_identical}/{len(diffs)} deterministic artefacts byte-for-byte IDENTICAL.")
         for k, v in diffs.items():
             print(f"  - {k}: {v}")
+        if n_identical != len(diffs):
+            sys.exit(1)
 
     summary_path = os.path.join(ev_dir, "smoke_pipeline_summary.json")
     with open(summary_path, "w", encoding="utf-8") as f:

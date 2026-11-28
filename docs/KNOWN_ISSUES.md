@@ -18,6 +18,7 @@
 | **BUG-08** | **Low** | `ips/models/train.py:345-352`, `docs/USER_TEST_GUIDE.md:95` | `USER_TEST_GUIDE.md` passed `--out-dir models` to `ips/models/train.py`, which lacked a `--model-dir` / `--out-dir` CLI argument. | `P10.1` | `tests/test_bugfixes_p10.py::test_bug08_train_cli_model_dir_and_seed_determinism` | **FIXED (V1)** |
 | **BUG-09** | **Low** | `docs/USER_TEST_GUIDE.md:136`, `docs/VM_QUICKSTART.md:9` | `USER_TEST_GUIDE.md` passed `--out` instead of `--out-dir` to `ips.eval.cross_domain`, and `VM_QUICKSTART.md` listed WSL2 (unsupported for XDP) and undersized 30 GB disk. | `P10.1` | `audit/check_claims.py` | **FIXED (V1)** |
 | **BUG-10** | **Medium** | `ips/eval/reproduce.py:77-156` | `generate_results_md` called `DataFrame.to_markdown(index=False)` when real CSVs existed, crashing with `ImportError: Missing optional dependency 'tabulate'` because `tabulate` was not in `requirements.txt`. Added pure-Python GFM fallback `_df_to_markdown`. | `P10.1` | `tests/test_coverage_core_p10.py::test_reproduce_b0_guard_and_populated_tables` | **FIXED (V1)** |
+| **BUG-11** | **Low** | `ebpf/ips_engine.c:172-173` | `(void *)(long)ctx->data` / `ctx->data_end` triggered `-Wint-to-void-pointer-cast` under 64-bit Windows (`LLP64`, `sizeof(long)==4`) static C checking; widened to `(__u64)` and added `IPS_STANDALONE_BPF_BUILD` `SEC("xdp")` / `SEC("license")` guards for standalone `clang -target bpf` builds. | `P10.2` | `tests/test_kernel_source_invariants.py` + `zig cc` (`0` warnings) | **FIXED (V2-compile)** |
 
 ---
 

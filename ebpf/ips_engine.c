@@ -165,9 +165,12 @@ static __always_inline int check_tier0_syn(__u32 src_ip, __u64 now_ns,
     return 0;
 }
 
+#ifdef IPS_STANDALONE_BPF_BUILD
+SEC("xdp")
+#endif
 int xdp_ips_prog(struct xdp_md *ctx) {
-    void *data = (void *)(long)ctx->data;
-    void *data_end = (void *)(long)ctx->data_end;
+    void *data = (void *)(__u64)ctx->data;
+    void *data_end = (void *)(__u64)ctx->data_end;
 
     int zero = 0;
     struct stats_entry *st = stats_map.lookup(&zero);
@@ -435,4 +438,8 @@ int xdp_ips_prog(struct xdp_md *ctx) {
 
     return XDP_PASS;
 }
+
+#ifdef IPS_STANDALONE_BPF_BUILD
+char _license[] SEC("license") = "GPL";
+#endif
 

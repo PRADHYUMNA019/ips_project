@@ -24,6 +24,7 @@ results/system/
 results/offline/
 results/smoke/
 results/verify/
+results/zig_cache/
 results/exp_*/
 results/data/
 results/splits/

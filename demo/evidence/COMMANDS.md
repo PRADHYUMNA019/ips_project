@@ -106,3 +106,29 @@
     - `python audit/mutation_runner.py` → `Total: 18 | KILLED: 18 | SURVIVED: 0 | BASELINE FAILS: 0 | INVALID: 0`
     - `python demo/run_smoke_pipeline.py --check-determinism` → `10/10 deterministic artefacts byte-for-byte IDENTICAL`
     - `powershell -ExecutionPolicy Bypass -File demo\run_demo.ps1` → `OVERALL: PASS`
+
+---
+
+## Prompt 10 — Pre-Kernel Completion (`branch p10-complete`)
+
+### Phase 1 (`P10.1:`) — Static Analysis, Property/Fuzz Suites, C-Header Generator & 28-Mutant Audit
+- **Ruff, Mypy, Vulture & Claims Audit**:
+  - Command: `python -m ruff check . ; python -m ruff format --check . ; python -m mypy ips datasets audit demo --ignore-missing-imports --explicit-package-bases ; python -m vulture ips datasets demo --min-confidence 80 ; python audit/check_claims.py`
+  - Output: `All checks passed!` / `108 files already formatted` / `Success: no issues found in 52 source files` / `4. Docs, Configs & C/Python Schema Sync Errors: 0`
+- **Branch Coverage (`demo/evidence/logs/p10_coverage_final.log`)**:
+  - Command: `python -m pytest -q --cov=ips --cov=datasets --cov-branch --cov-report=term-missing --cov-report=html:demo/evidence/coverage`
+  - Output: `96 passed, 1 skipped` (`TOTAL 84%`, all core `ips/` & adapter modules `81%–97%`)
+- **Expanded 28-Mutant Adversarial Suite (`demo/evidence/logs/p10_mutation_final.log`)**:
+  - Command: `python audit/mutation_runner.py`
+  - Output: `Total: 28 | KILLED: 28 | SURVIVED: 0 | BASELINE FAILS: 0 | INVALID: 0`
+
+### Phase 2 (`P10.2:`) — Static C/eBPF Compilation (`V2-compile`), 9-Rule Verifier Guard & CI Validation
+- **Local `zig cc` BPF Bytecode Compilation (`demo/evidence/logs/p10_zig_cc.log`)**:
+  - Command: `python -m ziglang cc -target bpfel-freestanding -O2 -g -Wall -Wextra -Wsign-compare -DIPS_STANDALONE_BPF_BUILD -Iebpf -Iebpf/stubs -include ebpf/stubs/bcc_standalone_shim.h -c ebpf/ips_engine.c -o results/zig_cache/ips_engine.o`
+  - Output: `EXIT_BPF_IPS_ENGINE=0` (`ips_engine.o 57760` bytes, `xdp_v1.o 13288` bytes, `0` warnings)
+- **GitHub Actions YAML Validation (`demo/evidence/logs/p10_ci_yaml_check.log`)**:
+  - Command: `python -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml', encoding='utf-8')); print('YAML_SAFE_LOAD_OK')" ; python -m yamllint -d "{extends: default, rules: {line-length: {max: 160}}}" .github/workflows/ci.yml`
+  - Output: `YAML_SAFE_LOAD_OK` (exit code `0`, `0` yamllint warnings/errors)
+- **Full Pytest Suite (with 9 BPF source rules + 50-trace C↔Mock equivalence)**:
+  - Command: `python -m pytest -q`
+  - Output: `106 passed, 1 skipped` (exit code `0`)
