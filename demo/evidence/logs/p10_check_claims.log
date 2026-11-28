@@ -1,0 +1,30 @@
+# UTC: 2026-11-28T15:02:21Z | Base Commit: 5389414 | Branch: p10-complete
+=== Scanning Repository for Claims, Overstatements, and Forbidden Wording ===
+
+1. Explicit Forbidden Phrases Found: 0
+
+2. Keywords Scanned ('On-Device', 'Raspberry', etc.): 19
+  [KEYWORD] demo/evidence/CLAIMS_VS_EVIDENCE.md:20 (On-Device): Working title (preserved verbatim per R4): *"Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks"*
+  [KEYWORD] demo/evidence/CLAIMS_VS_EVIDENCE.md:25 (On-Device): | **On-Device** | **No physical device** (emulated via cgroups S/M/L) | N/A | **None** (`TITLE_DECISION_PENDING`) | Scope note states emulated gateway only; guide to approve title change or post-80% hardware run |
+  [KEYWORD] demo/evidence/CLAIMS_VS_EVIDENCE.md:25 (physical device): | **On-Device** | **No physical device** (emulated via cgroups S/M/L) | N/A | **None** (`TITLE_DECISION_PENDING`) | Scope note states emulated gateway only; guide to approve title change or post-80% hardware run |
+  [KEYWORD] docs/GUIDE_DEMO.md:81 (On-Device): - **NOT done yet**: `ebpf/ips_engine.c` has never been compiled or run on Linux; no real TLS testbed traffic has been collected; no real inline latency/leakage/harm measurements exist; literature review (`docs/related_work_todo.md`) is unverified; paper title (`"On-Device"` vs. emulated gateway) is `TITLE_DECISION_PENDING`.
+  [KEYWORD] docs/GUIDE_DEMO.md:86 (Raspberry): - `[DATE_4]`: Remaining 20% (literature review verification, guide-requested ablations, optional physical Raspberry Pi / OpenWrt deployment, camera-ready paper polish).
+  [KEYWORD] docs/GUIDE_DEMO.md:94 (Raspberry): 2. **Why emulate resource limits via cgroups instead of measuring on a Raspberry Pi now?**
+  [KEYWORD] docs/GUIDE_DEMO.md:95 (On-Device): - We do not yet have physical edge hardware provisioned for the 60%–80% phase. Every document carries a Scope Note stating we measure an emulated resource-constrained gateway (Linux namespaces + cgroup CPU/RAM profiles S/M/L on user space; generic XDP unconstrained) and flags `"On-Device"` as `TITLE_DECISION_PENDING`.
+  [KEYWORD] docs/GUIDE_DEMO.md:95 (edge hardware): - We do not yet have physical edge hardware provisioned for the 60%–80% phase. Every document carries a Scope Note stating we measure an emulated resource-constrained gateway (Linux namespaces + cgroup CPU/RAM profiles S/M/L on user space; generic XDP unconstrained) and flags `"On-Device"` as `TITLE_DECISION_PENDING`.
+  [KEYWORD] docs/GUIDE_DEMO.md:103 (Raspberry): - Full verified literature review & citations, guide-requested ablations, optional physical embedded hardware validation (Raspberry Pi / OpenWrt router) + libbpf/CO-RE migration, additional public datasets, and camera-ready paper formatting.
+  [KEYWORD] docs/GUIDE_DEMO.md:103 (hardware validation): - Full verified literature review & citations, guide-requested ablations, optional physical embedded hardware validation (Raspberry Pi / OpenWrt router) + libbpf/CO-RE migration, additional public datasets, and camera-ready paper formatting.
+  [KEYWORD] docs/LIMITATIONS.md:11 (Raspberry): - Physical embedded gateway deployments (e.g. Raspberry Pi 4/5, OpenWrt routers) are designated as post-60% validation.
+  [KEYWORD] docs/PAPER_OUTLINE.md:3 (On-Device): **Working Title**: *Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks*
+  [KEYWORD] docs/PROGRESS.md:49 (Raspberry): - Physical embedded gateway deployment (e.g. Raspberry Pi 4/5 or OpenWrt hardware router)
+  [KEYWORD] docs/spec.md:1 (On-Device): # System Specification: Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks
+  [KEYWORD] docs/TODO_USER.md:59 (Raspberry): - Flash OpenWrt or Linux onto physical edge hardware (e.g. Raspberry Pi or embedded router).
+  [KEYWORD] docs/TODO_USER.md:59 (edge hardware): - Flash OpenWrt or Linux onto physical edge hardware (e.g. Raspberry Pi or embedded router).
+  [KEYWORD] README.md:1 (On-Device): # Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks
+  [KEYWORD] README.md:44 (hardware validation): - Physical embedded hardware validation (planned post-60% scope)
+  [KEYWORD] scripts/demo.sh:9 (edge hardware): echo -e "\033[1;30m   Scope: Network namespace testbed with cgroup resource limits. No edge hardware.       \033[0m"
+
+3. Title Consistency Check (Rule R4):
+  [README.md]: Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks
+  [docs/spec.md]: Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks
+  [docs/PAPER_OUTLINE.md]: Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks

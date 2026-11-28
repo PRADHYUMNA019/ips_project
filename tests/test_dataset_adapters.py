@@ -2,6 +2,7 @@
 """
 tests/test_dataset_adapters.py — Unit tests for dataset adapters (A2, A3, A7) and audit_pcap.py.
 """
+
 import math
 import os
 import sys
@@ -40,7 +41,7 @@ def test_plaintext_marker():
     """Verify HTTP and MQTT plaintext markers."""
     assert is_plaintext_marker(b"POST /api HTTP/1.1", 80) is True
     assert is_plaintext_marker(b"GET / HTTP/1.1", 8080) is True
-    assert is_plaintext_marker(bytes([0x10, 0x0c, 0x00, 0x04]) + b"MQTT", 1883) is True
+    assert is_plaintext_marker(bytes([0x10, 0x0C, 0x00, 0x04]) + b"MQTT", 1883) is True
     assert is_plaintext_marker(b"random_binary_payload", 8883) is False
 
 
@@ -158,4 +159,3 @@ def test_tqh_verified_parquet_summary_fixture(tmp_path):
     df.drop(columns=["ja4"]).to_json(bad_path, orient="records")
     with pytest.warns(UserWarning, match="UNVERIFIED SCHEMA"):
         load_tqh_parquet_summary(bad_path)
-

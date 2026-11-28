@@ -15,12 +15,11 @@ Computes:
 Rule B0: When invoked with --smoke (or on non-Linux without live capture outputs),
 writes ONLY to results/smoke/ and prints "SMOKE DATA – NOT A RESULT".
 """
+
+import argparse
 import os
 import sys
-import time
-import json
-import argparse
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import psutil
@@ -114,8 +113,8 @@ def compute_operational_harm_metrics(
     flows_per_device_day: int = 288,
     fleet_size: int = 12,
     mean_reconnect_interval_s: float = 15.0,
-    decisions: List[Dict[str, Any]] = None,
-    attacker_ips: List[str] = None,
+    decisions: Optional[List[Dict[str, Any]]] = None,
+    attacker_ips: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Translate statistical flow-level FPR into concrete IoT operational harm (C10 / N10):
@@ -152,7 +151,7 @@ def compute_operational_harm_metrics(
 
 def evaluate_flow_decisions(
     decisions: List[Dict[str, Any]],
-    attacker_ips: List[str] = None,
+    attacker_ips: Optional[List[str]] = None,
     drop_ttl_s: float = 60.0,
 ) -> Dict[str, Any]:
     """
@@ -179,12 +178,10 @@ def evaluate_flow_decisions(
     ttv_ms_list = []
     pkts_at_verdict_list = []
 
-    for fkey, d_list in flows_grouped.items():
+    for _fkey, d_list in flows_grouped.items():
         first_d = d_list[0]
         is_atk_truth = (
-            (first_d.get("initiator_ip") in attacker_set)
-            or (first_d.get("ip_a") in attacker_set)
-            or (first_d.get("ip_b") in attacker_set)
+            (first_d.get("initiator_ip") in attacker_set) or (first_d.get("ip_a") in attacker_set) or (first_d.get("ip_b") in attacker_set)
         )
         anom_decisions = [x for x in d_list if bool(x.get("is_anomaly", False))]
         pred_anom = len(anom_decisions) > 0
@@ -204,7 +201,7 @@ def evaluate_flow_decisions(
     n_atk = tp + fn
     n_ben = fp + tn
     tpr = (tp / max(1, n_atk)) if n_atk > 0 else 0.0
-    fpr = (fp / max(1, (fp + tn)))
+    fpr = fp / max(1, (fp + tn))
     prec = (tp / max(1, (tp + fp))) if (tp + fp) > 0 else 0.0
     f1 = (2 * prec * tpr / (prec + tpr)) if (prec + tpr) > 0 else 0.0
     fpr_ci_lo, fpr_ci_hi = clopper_pearson_ci(fp, max(1, n_ben), alpha=0.05)
@@ -240,7 +237,7 @@ evaluate_run_metrics = evaluate_flow_decisions
 
 def simulate_closed_loop_workload(
     early_n: int = 12,
-    checkpoints: List[int] = None,
+    checkpoints: Optional[List[int]] = None,
     bypass_enabled: bool = True,
     mode: str = "enforce",
     n_benign_flows: int = 20,
@@ -293,7 +290,7 @@ def simulate_closed_loop_workload(
     wan_egress_atk = 0
     for a_idx in range(n_attack_flows):
         sport = 55000 + a_idx
-        for p_idx in range(pkts_per_attack_flow):
+        for _p_idx in range(pkts_per_attack_flow):
             now_ns += 50_000  # 50 us
             total_atk_sent += 1
             act, ev = backend.simulate_packet("10.0.1.4", sport, "10.0.2.10", 8443, "TCP", 1400, 0, now_ns)
@@ -305,7 +302,9 @@ def simulate_closed_loop_workload(
     st = backend.get_stats()
     drop_ttl_s = float(cfg.get("system", {}).get("drop_ttl_s", 60.0))
     flow_metrics = evaluate_flow_decisions(engine.decisions_log, attacker_ips=["10.0.1.4"], drop_ttl_s=drop_ttl_s)
-    first_verdict_n = int(round(flow_metrics["mean_payload_pkts_at_verdict"])) if flow_metrics["mean_payload_pkts_at_verdict"] > 0 else ckpts[0]
+    first_verdict_n = (
+        int(round(flow_metrics["mean_payload_pkts_at_verdict"])) if flow_metrics["mean_payload_pkts_at_verdict"] > 0 else ckpts[0]
+    )
     leak_metrics = compute_attack_leakage(
         total_attack_pkts_sent=total_atk_sent,
         wan_egress_attack_pkts=wan_egress_atk,
@@ -372,4 +371,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

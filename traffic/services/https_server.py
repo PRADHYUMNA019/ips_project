@@ -4,6 +4,7 @@ traffic/services/https_server.py — HTTPS server for IoT camera uploads & exfil
 
 Runs in netns 'srv' on port 443 (or custom port) with TLS 1.2/1.3.
 """
+
 import os
 import ssl
 import sys
@@ -29,7 +30,7 @@ class EdgeHTTPHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(b'{"status": "received", "bytes": ' + str(len(body)).encode() + b'}\n')
+        self.wfile.write(b'{"status": "received", "bytes": ' + str(len(body)).encode() + b"}\n")
 
     def log_message(self, format, *args):
         # Quiet logging
@@ -40,6 +41,7 @@ def run_https_server(host="0.0.0.0", port=443):
     if not os.path.exists(CERT_FILE) or not os.path.exists(KEY_FILE):
         # Auto generate certs if needed
         from traffic.tls_server import ensure_certs
+
         ensure_certs()
 
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -60,4 +62,3 @@ def run_https_server(host="0.0.0.0", port=443):
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 443
     run_https_server(port=port)
-

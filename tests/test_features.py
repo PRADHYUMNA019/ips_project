@@ -2,6 +2,7 @@
 """
 tests/test_features.py — Unit tests for canonical shared features and shortcut guard.
 """
+
 import os
 import math
 import tempfile
@@ -79,9 +80,9 @@ def test_pcap_to_flows_golden_fixture():
 
         # 3 packets: 100B at t=100.0, 200B at t=100.2 (IAT=200ms), 300B at t=100.5 (IAT=300ms)
         pkts_spec = [
-            (100.0, b"A" * 100, 54321, 8883, True),   # Client -> Server
+            (100.0, b"A" * 100, 54321, 8883, True),  # Client -> Server
             (100.2, b"B" * 200, 8883, 54321, False),  # Server -> Client
-            (100.5, b"C" * 300, 54321, 8883, True),   # Client -> Server
+            (100.5, b"C" * 300, 54321, 8883, True),  # Client -> Server
         ]
 
         for ts, payload, sport, dport, is_lan in pkts_spec:
@@ -90,7 +91,7 @@ def test_pcap_to_flows_golden_fixture():
             tcp = dpkt.tcp.TCP(sport=sport, dport=dport, data=payload, flags=dpkt.tcp.TH_PUSH | dpkt.tcp.TH_ACK)
             ip = dpkt.ip.IP(src=src_ip, dst=dst_ip, p=dpkt.ip.IP_PROTO_TCP, data=tcp)
             ip.len = len(ip)
-            eth = dpkt.ethernet.Ethernet(src=b"\x00"*6, dst=b"\x00"*6, type=dpkt.ethernet.ETH_TYPE_IP, data=ip)
+            eth = dpkt.ethernet.Ethernet(src=b"\x00" * 6, dst=b"\x00" * 6, type=dpkt.ethernet.ETH_TYPE_IP, data=ip)
             writer.writepkt(eth, ts=ts)
         writer.close()
 
@@ -281,10 +282,13 @@ def test_offline_extractor_idle_timeout_and_syn_lifecycle_p9_3b(tmp_path):
 
     # 1. Gap just below idle limit (119.0s <= 120.0s)
     p_below = str(tmp_path / "idle_below.pcap")
-    _write_tcp_pcap(p_below, [
-        (100.0, 50001, 8883, PA, b"A" * 80, True),
-        (219.0, 50001, 8883, PA, b"B" * 90, True),
-    ])
+    _write_tcp_pcap(
+        p_below,
+        [
+            (100.0, 50001, 8883, PA, b"A" * 80, True),
+            (219.0, 50001, 8883, PA, b"B" * 90, True),
+        ],
+    )
     df_below = extract_flows_from_pcap(p_below, early_n=8)
     assert len(df_below) == 1, f"Expected 1 flow for 119s gap (<=120s), got {len(df_below)}"
     assert list(df_below["instance"]) == [0]
@@ -292,35 +296,44 @@ def test_offline_extractor_idle_timeout_and_syn_lifecycle_p9_3b(tmp_path):
 
     # 2. Gap above idle limit (121.0s > 120.0s default from configs/system.yaml)
     p_above = str(tmp_path / "idle_above.pcap")
-    _write_tcp_pcap(p_above, [
-        (100.0, 50002, 8883, PA, b"A" * 80, True),
-        (221.0, 50002, 8883, PA, b"B" * 90, True),
-    ])
+    _write_tcp_pcap(
+        p_above,
+        [
+            (100.0, 50002, 8883, PA, b"A" * 80, True),
+            (221.0, 50002, 8883, PA, b"B" * 90, True),
+        ],
+    )
     df_above = extract_flows_from_pcap(p_above, early_n=8)
     assert len(df_above) == 2, f"Expected 2 flows for 121s gap (>120s), got {len(df_above)}"
     assert list(df_above["instance"]) == [0, 1]
 
     # 3. Reused 5-tuple after FIN (with server FIN-ACK + new SYN)
     p_fin = str(tmp_path / "fin_reuse.pcap")
-    _write_tcp_pcap(p_fin, [
-        (10.0, 50003, 8883, dpkt.tcp.TH_SYN, b"", True),
-        (10.1, 50003, 8883, PA, b"A" * 120, True),
-        (10.2, 50003, 8883, dpkt.tcp.TH_FIN | dpkt.tcp.TH_ACK, b"", True),
-        (10.25, 8883, 50003, dpkt.tcp.TH_FIN | dpkt.tcp.TH_ACK, b"", False),
-        (15.0, 50003, 8883, dpkt.tcp.TH_SYN, b"", True),
-        (15.1, 50003, 8883, PA, b"B" * 300, True),
-    ])
+    _write_tcp_pcap(
+        p_fin,
+        [
+            (10.0, 50003, 8883, dpkt.tcp.TH_SYN, b"", True),
+            (10.1, 50003, 8883, PA, b"A" * 120, True),
+            (10.2, 50003, 8883, dpkt.tcp.TH_FIN | dpkt.tcp.TH_ACK, b"", True),
+            (10.25, 8883, 50003, dpkt.tcp.TH_FIN | dpkt.tcp.TH_ACK, b"", False),
+            (15.0, 50003, 8883, dpkt.tcp.TH_SYN, b"", True),
+            (15.1, 50003, 8883, PA, b"B" * 300, True),
+        ],
+    )
     df_fin = extract_flows_from_pcap(p_fin, early_n=8)
     assert len(df_fin) == 2
     assert list(df_fin["instance"]) == [0, 1]
 
     # 4. SYN retransmit (SYN at 50.0, SYN retransmit at 51.0, payload at 51.2) -> must NOT reset!
     p_syn_ret = str(tmp_path / "syn_retrans.pcap")
-    _write_tcp_pcap(p_syn_ret, [
-        (50.0, 50004, 8883, dpkt.tcp.TH_SYN, b"", True),
-        (51.0, 50004, 8883, dpkt.tcp.TH_SYN, b"", True),
-        (51.2, 50004, 8883, PA, b"X" * 100, True),
-    ])
+    _write_tcp_pcap(
+        p_syn_ret,
+        [
+            (50.0, 50004, 8883, dpkt.tcp.TH_SYN, b"", True),
+            (51.0, 50004, 8883, dpkt.tcp.TH_SYN, b"", True),
+            (51.2, 50004, 8883, PA, b"X" * 100, True),
+        ],
+    )
     df_syn = extract_flows_from_pcap(p_syn_ret, early_n=8)
     assert len(df_syn) == 1
     assert int(df_syn.iloc[0]["instance"]) == 0, f"SYN retransmit falsely incremented instance to {df_syn.iloc[0]['instance']}"
@@ -328,10 +341,13 @@ def test_offline_extractor_idle_timeout_and_syn_lifecycle_p9_3b(tmp_path):
 
     # 5. Long active flow (250s total duration > 120s, but packets every 10s <= 120s) -> must NOT reset!
     p_long = str(tmp_path / "long_active.pcap")
-    _write_tcp_pcap(p_long, [
-        (1000.0 + i * 10.0, 50005 if i % 2 == 0 else 8883, 8883 if i % 2 == 0 else 50005, PA, b"P" * 64, (i % 2 == 0))
-        for i in range(26)  # t = 1000..1250s (250s span, 26 payload pkts > early_n=8)
-    ])
+    _write_tcp_pcap(
+        p_long,
+        [
+            (1000.0 + i * 10.0, 50005 if i % 2 == 0 else 8883, 8883 if i % 2 == 0 else 50005, PA, b"P" * 64, (i % 2 == 0))
+            for i in range(26)  # t = 1000..1250s (250s span, 26 payload pkts > early_n=8)
+        ],
+    )
     df_long = extract_flows_from_pcap(p_long, early_n=8)
     assert len(df_long) == 1, f"Long active flow with 10s gaps falsely split into {len(df_long)} flows"
     assert int(df_long.iloc[0]["instance"]) == 0
@@ -341,7 +357,3 @@ def test_offline_extractor_idle_timeout_and_syn_lifecycle_p9_3b(tmp_path):
     df_override = extract_flows_from_pcap(p_long, early_n=8, flow_idle_s=5.0)
     assert len(df_override) == 26
     assert list(df_override["instance"]) == list(range(26))
-
-
-
-

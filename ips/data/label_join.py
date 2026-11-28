@@ -11,6 +11,7 @@ Provides:
      Joins offline pcap flows to kernel/engine EARLY_FLOW JSONL events by canonical 5-tuple
      and flow instance order.
 """
+
 from collections import defaultdict
 from typing import List, Dict, Any
 import pandas as pd
@@ -86,7 +87,7 @@ def join_flows_to_engine_events(
         ckey = canonical_flow_key(ip1, p1, ip2, p2, proto)
         ev_by_key[ckey].append(ev)
 
-    seen_counts = defaultdict(int)
+    seen_counts: Dict[Any, int] = defaultdict(int)
     for idx, row in out.iterrows():
         ckey = canonical_flow_key(
             str(row["src_ip"]),
@@ -105,4 +106,3 @@ def join_flows_to_engine_events(
             out.at[idx, "engine_verdict"] = matched_ev.get("verdict_written", None)
 
     return out
-

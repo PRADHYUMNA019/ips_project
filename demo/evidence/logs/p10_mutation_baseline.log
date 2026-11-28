@@ -1,0 +1,63 @@
+# UTC: 2026-11-28T15:02:21Z | Base Commit: 5389414 | Branch: p10-complete
+=== Running Adversarial Mutation Testing Suite ===
+
+--- Step 0: Running Global Baseline Suite (18 targets, no mutation) ---
+  [GLOBAL BASELINE PASSED] (18 passed in 8.56s)
+
+--- Running Mutation M1: Count zero-payload packets (e.g. pure SYN/ACK) in early-flow window ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed, 1 passed in 0.76s)
+
+--- Running Mutation M2: Flip direction convention (0 = client->server from LAN side) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed, 1 passed in 0.72s)
+
+--- Running Mutation M3: Change normalization constant (/1500.0 -> /1400.0) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 0.74s)
+
+--- Running Mutation M4: Remove / neutralise forbidden-column shortcut guard ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 0.71s)
+
+--- Running Mutation M5: Disable assertion that sessions appear in only one split ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 3.76s)
+
+--- Running Mutation M6: Allow attack flows into calibration split ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 4.25s)
+
+--- Running Mutation M7: Swap sign in EVT Generalized Pareto threshold formula ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 2.56s)
+
+--- Running Mutation M8: Off-by-one in split-conformal quantile index ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 2.50s)
+
+--- Running Mutation M9: Shift time window comparison in manifest label join ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 3.62s)
+
+--- Running Mutation M10: Disable guard check G2 (force cross-device quorum to always pass) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 2.16s)
+
+--- Running Mutation M10b: Disable guard check G3 (force non-periodicity to always pass) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 2.53s)
+
+--- Running Mutation M11: Make observe mode write verdicts to BPF map (violates observe contract) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 3.11s)
+
+--- Running Mutation M12: Reintroduce trimmed-line bug in topology.sh parse_devices ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 0.07s)
+
+--- Running Mutation M13: Ignore TTL expiry in verdict cache logic (stale entries never expire) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 2.99s)
+
+--- Running Mutation M14: Change checkpoint_idx type from uint8 to uint32 in ctypes struct ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed, 1 passed in 0.69s)
+
+--- Running Mutation M15: Corrupt FPR denominator (fp/(tp+fn) instead of fp/(fp+tn)) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed, 1 passed in 5.44s)
+
+--- Running Mutation M16: Invert Coefficient of Variation calculation (mean/std instead of std/mean) ---
+  [KILLED] Tests failed as expected! rc=1 (1 failed in 2.55s)
+
+--- Running Mutation M17: Remove per-packet log-IAT /7.0 normalisation and [0, 1.5] clip ---
+  [KILLED] Tests failed as expected! rc=1 (2 failed in 0.77s)
+
+================== Mutation Results Summary ==================
+Total: 18 | KILLED: 18 | SURVIVED: 0 | BASELINE FAILS: 0 | INVALID: 0
+Report written to: C:\Users\Dell\finalyr_project\audit\mutation_results.md

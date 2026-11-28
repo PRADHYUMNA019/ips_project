@@ -8,11 +8,11 @@ Every flow table produced by `ips/offline/pcap_to_flows.py` or `datasets/adapter
    - `src_ip`, `dst_ip`, `sport`, `dport`, `proto`
    - `start_ts`, `end_ts`, `instance`
    - `session_id`, `source`, `label_family`, `is_attack`, `encrypted`, `domain`
-2. **Model Feature Columns (`3N + 8` floats produced by `ips.features.build_early_vector`)**:
-   - `size_0 .. size_{N-1}`: L4 payload bytes normalized by `1500.0` (computed from IP/TCP/UDP header lengths, resilient to truncated pcaps)
-   - `dir_0 .. dir_{N-1}`: direction (`0` = initiator/LAN->WAN, `1` = responder/WAN->LAN)
-   - `log_iat_0 .. log_iat_{N-2}`: `log10(1 + iat_us)` between consecutive payload-bearing packets
-   - 9 aggregates: `bytes_up`, `bytes_down`, `pkts_up`, `pkts_down`, `frac_upstream`, `mean_log_iat`, `std_log_iat`, `first_payload_size`, `valid_len`
+2. **Model Feature Columns (`3N + 8` floats produced by `ips.features.build_early_vector`, `FEATURE_SCHEMA_VERSION = 2`, default `early_n = 16`, progressive checkpoints `[4, 8, 16]`)**:
+   - `size_0 .. size_{N-1}`: L4 payload bytes normalized by `min(1500.0, size) / 1500.0` in `[0.0, 1.0]` (computed from IP/TCP/UDP header lengths, resilient to truncated pcaps)
+   - `dir_0 .. dir_{N-1}`: direction (`0` = initiator/LAN->WAN, `1` = responder/WAN->LAN) in `{0.0, 1.0}`
+   - `log_iat_0 .. log_iat_{N-2}`: `min(1.5, log10(1 + iat_us) / 7.0)` in `[0.0, 1.5]` between consecutive payload-bearing packets
+   - 9 aggregates (each bounded in `[0.0, 1.5]`): `bytes_up`, `bytes_down`, `pkts_up`, `pkts_down`, `frac_upstream`, `mean_log_iat`, `std_log_iat`, `first_payload_size`, `valid_len`
 
 ---
 

@@ -10,6 +10,7 @@ Used in two places:
      beacons (e.g., 30s-3600s interval with jitter) that open a new TLS connection
      per beacon and therefore evade single-flow early-packet IAT features.
 """
+
 from collections import defaultdict
 from typing import List, Dict, Any, Tuple
 import numpy as np
@@ -125,4 +126,3 @@ class SlowC2Tracker:
             "spectral_peak_ratio": res["spectral_peak_ratio"],
             "mean_interval_s": res["mean_interval"],
         }
-

@@ -7,6 +7,7 @@ Simulates Sliver / Mythic / CobaltStrike C2 beacons with configurable:
   - Jitter: {0, 15, 30} percent
   - Modes: persistent keep-alive vs reconnect-per-beacon
 """
+
 import ssl
 import socket
 import time
@@ -20,11 +21,17 @@ sys.path.insert(0, REPO_DIR)
 from traffic.manifest import ManifestWriter
 
 
-def run_a3_c2_beacon(target_ip="10.0.2.10", target_port=8883,
-                     interval_s=5.0, jitter_pct=0.30, duration_s=60.0,
-                     mode="persistent", manifest_path="results/manifest.csv",
-                     run_id="run_exp"):
-    print(f"[A3 C2 BEACON] Starting TLS C2: interval={interval_s}s, jitter={jitter_pct*100}%, mode={mode}, duration={duration_s}s")
+def run_a3_c2_beacon(
+    target_ip="10.0.2.10",
+    target_port=8883,
+    interval_s=5.0,
+    jitter_pct=0.30,
+    duration_s=60.0,
+    mode="persistent",
+    manifest_path="results/manifest.csv",
+    run_id="run_exp",
+):
+    print(f"[A3 C2 BEACON] Starting TLS C2: interval={interval_s}s, jitter={jitter_pct * 100}%, mode={mode}, duration={duration_s}s")
     writer = ManifestWriter(manifest_path, run_id=run_id)
     start_ts = time.time()
 
@@ -71,7 +78,7 @@ def run_a3_c2_beacon(target_ip="10.0.2.10", target_port=8883,
                 except Exception:
                     pass
                 beacons_sent += 1
-        except Exception as e:
+        except Exception:
             if mode == "persistent" and tls_sock:
                 try:
                     tls_sock.close()
@@ -130,4 +137,3 @@ if __name__ == "__main__":
         manifest_path=args.manifest,
         run_id=args.run_id,
     )
-

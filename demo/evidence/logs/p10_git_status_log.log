@@ -1,0 +1,25 @@
+# UTC: 2026-11-28T15:02:21Z | Base Commit: 5389414 | Branch: p10-complete
+--- git status --short ---
+?? docs/P10_STATE.md
+
+--- git log --oneline -20 ---
+5389414 P9.6: calibrate EVT on INT8 ONNX, fix requirements-linux.txt, and silence Python 3.14/ONNX warnings
+a1d72ac P9.5: restore determinism_check block in smoke_pipeline_summary.json
+04e6ed4 P9.5: update Figure D, export PNG/SVG diagrams, update guide docs, and pass final gate
+c51453b P9.4: calibrate public-data claims and add real benign host-pair CV false-positive baseline
+b70ceb8 P9.3: add kernel-matching flow_idle_s and SYN/FIN split rules to offline extractor
+b909d1e P9.2: normalise per-packet log_iat by /7.0, add M17 mutant, and re-run exploratory diagnostic
+35bc8b2 P9.1: fix smoke ROC inversion, masked ONNX scoring, and engine model_card loading
+31da19b P8.5: Mermaid architecture diagrams, claims vs evidence, guide demo script, and evidence index
+a4800d0 P8.4: exploratory real IoT-23 cross-device benign transfer (TQH-C2 TPR skipped per 4.3)
+3618b7c P8.3: real public data audit for TQH-C2 Testbed D (11,528 flows) and IoT-23 benign pcaps (1,254 flows)
+55b7f48 P8.2: deterministic end-to-end synthetic smoke pipeline and 5 watermarked figures
+d32cfd5 P8.1: unit test, syntax, claims, and mutation evidence pack + Windows demo runner
+3b3050f P6: restore emitted_mask set in ips_engine.c, fix S6e/B7/C1/R4/mutation runner (C code was not compiled in this session)
+b182702 E: wrap-up verification, mutation kill confirmation, and audit remediation log
+c47fafb D: add scope notes, document kernel concurrency and idle limits, and add VM quickstart guide
+82c1950 C: audit blind spots inspection, sticky drop verification, and masking checks
+3a4206f B: user-space schema validation (DEF-04), metric & feature tests (M2, M8, M15 killed), and EVT KAT
+42e4c0a A: kernel fast path connection re-use (DEF-03), safe checkpoint submission, and verify_linux stages S6c-S6e
+54b5f81 audit: adversarial code review and methodology audit report (WP0-WP9)
+065e3c7 WP9: extend verify_linux.sh (S5b, S6b, S8b, S11), update paper outline (C1-C4), test guide, and results

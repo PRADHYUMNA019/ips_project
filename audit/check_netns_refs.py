@@ -36,9 +36,7 @@ with open(DEVICES_YAML, "r", encoding="utf-8") as f:
     dev_cfg = yaml.safe_load(f)
 
 EXPECTED_NETNS = {"gw", "srv", "attacker"}
-REGISTERED_IPS = {
-    "10.0.1.1", "10.0.2.1", "10.0.1.0", "10.0.2.0", "10.0.1.255", "10.0.2.255"
-}
+REGISTERED_IPS = {"10.0.1.1", "10.0.2.1", "10.0.1.0", "10.0.2.0", "10.0.1.255", "10.0.2.255"}
 
 for dev in dev_cfg.get("devices", []):
     EXPECTED_NETNS.add(dev["device_id"])
@@ -86,33 +84,19 @@ def check_references():
                 if target.startswith("$"):
                     continue
                 if target in FORBIDDEN_LEGACY_NETNS:
-                    findings.append((
-                        script_rel, idx,
-                        f"References forbidden legacy netns '{target}': {line.strip()}",
-                        "BLOCKER"
-                    ))
+                    findings.append((script_rel, idx, f"References forbidden legacy netns '{target}': {line.strip()}", "BLOCKER"))
                 elif target not in EXPECTED_NETNS:
-                    findings.append((
-                        script_rel, idx,
-                        f"Unknown netns target '{target}' (not created by topology.sh): {line.strip()}",
-                        "MAJOR"
-                    ))
+                    findings.append(
+                        (script_rel, idx, f"Unknown netns target '{target}' (not created by topology.sh): {line.strip()}", "MAJOR")
+                    )
 
             # Check IPs
             for match in IP_RE.finditer(line):
                 ip = match.group(1)
                 if ip in FORBIDDEN_LEGACY_IPS:
-                    findings.append((
-                        script_rel, idx,
-                        f"References legacy 30% shared IP {ip}: {line.strip()}",
-                        "BLOCKER"
-                    ))
+                    findings.append((script_rel, idx, f"References legacy 30% shared IP {ip}: {line.strip()}", "BLOCKER"))
                 elif ip not in REGISTERED_IPS:
-                    findings.append((
-                        script_rel, idx,
-                        f"Unregistered IP '{ip}' found in script: {line.strip()}",
-                        "MINOR"
-                    ))
+                    findings.append((script_rel, idx, f"Unregistered IP '{ip}' found in script: {line.strip()}", "MINOR"))
 
     print(f"\nTotal findings: {len(findings)}")
     for f in findings:

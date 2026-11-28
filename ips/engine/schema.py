@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 """
-ips/engine/schema.py — Single source of truth for kernel/user-space data structures (F10).
+ips/engine/schema.py — Single source of truth for kernel/user-space data structures (F10, P10.1).
 
 Reads configs/system.yaml and generates:
-  1. C preprocessor header defines for ebpf/ips_engine.c (EARLY_N, map sizes, tier-0 constants).
+  1. C preprocessor header defines in ebpf/generated_constants.h for ebpf/ips_engine.c
+     (EARLY_N, progressive checkpoints, map sizes, flow_idle_s, tier-0 constants, verdict codes).
   2. Matching ctypes.Structure classes (FlowKey, VerdictEntry, CfgEntry, StatsEntry, EarlyFlowEvent)
      with explicit alignment so changing system.early_n in YAML cannot desynchronize C and Python.
 """
+
+import ctypes
 import os
-import sys
 import socket
 import struct
-import ctypes
+import sys
 from dataclasses import dataclass
-from typing import Dict, Any, Tuple, List
+from typing import Any, Dict, Optional, Tuple
+
 import yaml
 
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DEFAULT_CONFIG_PATH = os.path.join(REPO_DIR, "configs", "system.yaml")
+GENERATED_HEADER_PATH = os.path.join(REPO_DIR, "ebpf", "generated_constants.h")
 
 SCHEMA_VERSION = 4
 
@@ -41,6 +45,7 @@ def load_system_config(config_path: str = DEFAULT_CONFIG_PATH) -> Dict[str, Any]
                 "verdict_map_max": 4096,
                 "bypass_ttl_s": 300,
                 "drop_ttl_s": 60,
+                "flow_idle_s": 120,
                 "target_fpr": 0.001,
                 "mode": "observe",
                 "bypass": True,
@@ -65,10 +70,11 @@ def load_system_config(config_path: str = DEFAULT_CONFIG_PATH) -> Dict[str, Any]
             },
         }
     with open(config_path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        data = yaml.safe_load(f)
+    return data if isinstance(data, dict) else {}
 
 
-def generate_c_header(config: Dict[str, Any] = None) -> str:
+def generate_c_header(config: Optional[Dict[str, Any]] = None) -> str:
     """
     Generate C preprocessor macros consumed by ebpf/ips_engine.c.
     Guarantees EARLY_N, progressive checkpoints (C1/N7), and map capacities
@@ -112,22 +118,36 @@ def generate_c_header(config: Dict[str, Any] = None) -> str:
     ]
     for i, ckpt in enumerate(checkpoints):
         lines.append(f"#define CKPT_{i} {ckpt}")
-    lines.extend([
-        f"#define EARLY_N {early_n}",
-        f"#define EARLY_N_MINUS_1 {early_n - 1}",
-        f"#define FLOW_MAP_MAX {flow_map_max}",
-        f"#define VERDICT_MAP_MAX {verdict_map_max}",
-        f"#define TIER0_DEFAULT_RATE {t0_rate}",
-        f"#define TIER0_DEFAULT_CAPACITY {t0_cap}",
-        f"#define TIER0_BLOCK_TTL_NS ({t0_block_s}ULL * 1000000000ULL)",
-        f"#define FLOW_IDLE_NS ({flow_idle_s}ULL * 1000000000ULL)",
-        "#define VERDICT_NONE 0",
-        "#define VERDICT_BYPASS 1",
-        "#define VERDICT_DROP 2",
-        "#endif /* IPS_GENERATED_SCHEMA_H */",
-        "",
-    ])
+    lines.extend(
+        [
+            f"#define EARLY_N {early_n}",
+            f"#define EARLY_N_MINUS_1 {early_n - 1}",
+            f"#define FLOW_MAP_MAX {flow_map_max}",
+            f"#define VERDICT_MAP_MAX {verdict_map_max}",
+            f"#define TIER0_DEFAULT_RATE {t0_rate}",
+            f"#define TIER0_DEFAULT_CAPACITY {t0_cap}",
+            f"#define TIER0_BLOCK_TTL_NS ({t0_block_s}ULL * 1000000000ULL)",
+            f"#define FLOW_IDLE_NS ({flow_idle_s}ULL * 1000000000ULL)",
+            f"#define VERDICT_NONE {VERDICT_NONE}",
+            f"#define VERDICT_BYPASS {VERDICT_BYPASS}",
+            f"#define VERDICT_DROP {VERDICT_DROP}",
+            "#endif /* IPS_GENERATED_SCHEMA_H */",
+            "",
+        ]
+    )
     return "\n".join(lines)
+
+
+def write_generated_c_header(
+    out_path: str = GENERATED_HEADER_PATH,
+    config: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Write ebpf/generated_constants.h from configs/system.yaml (single source of truth)."""
+    header_text = generate_c_header(config)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(header_text)
+    return out_path
 
 
 class FlowKey(ctypes.Structure):
@@ -135,6 +155,7 @@ class FlowKey(ctypes.Structure):
     ip_a, ip_b, port_a, port_b are stored in host byte order (u32 / u16)
     with (ip_a, port_a) <= (ip_b, port_b).
     """
+
     if sys.version_info >= (3, 14):
         _layout_ = "ms"
     _pack_ = 1
@@ -150,34 +171,37 @@ class FlowKey(ctypes.Structure):
 
 class VerdictEntry(ctypes.Structure):
     """Verdict map value (16 bytes, 8-byte aligned)."""
+
     if sys.version_info >= (3, 14):
         _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
-        ("action", ctypes.c_uint8),       # 1 = BYPASS, 2 = DROP
+        ("action", ctypes.c_uint8),  # 1 = BYPASS, 2 = DROP
         ("pad", ctypes.c_uint8 * 7),
-        ("expiry_ns", ctypes.c_uint64),   # monotonic bpf_ktime_get_ns() expiration
+        ("expiry_ns", ctypes.c_uint64),  # monotonic bpf_ktime_get_ns() expiration
     ]
 
 
 class CfgEntry(ctypes.Structure):
     """Runtime kernel configuration in single-entry BPF array (16 bytes)."""
+
     if sys.version_info >= (3, 14):
         _layout_ = "ms"
     _pack_ = 1
     _fields_ = [
-        ("lan_ifindex", ctypes.c_uint32),     # interface index of v-lan-gw
-        ("shed", ctypes.c_uint8),             # 1 = watchdog load shedding active (fail-open)
-        ("debug", ctypes.c_uint8),            # 1 = emit debug traces
-        ("tier0_enabled", ctypes.c_uint8),    # 1 = enable per-source SYN token bucket
+        ("lan_ifindex", ctypes.c_uint32),  # interface index of v-lan-gw
+        ("shed", ctypes.c_uint8),  # 1 = watchdog load shedding active (fail-open)
+        ("debug", ctypes.c_uint8),  # 1 = emit debug traces
+        ("tier0_enabled", ctypes.c_uint8),  # 1 = enable per-source SYN token bucket
         ("pad", ctypes.c_uint8),
-        ("tier0_rate", ctypes.c_uint32),      # tokens per second
+        ("tier0_rate", ctypes.c_uint32),  # tokens per second
         ("tier0_capacity", ctypes.c_uint32),  # burst capacity
     ]
 
 
 class StatsEntry(ctypes.Structure):
     """Per-CPU kernel telemetry counters (72 bytes)."""
+
     if sys.version_info >= (3, 14):
         _layout_ = "ms"
     _pack_ = 1
@@ -204,29 +228,16 @@ class SchemaBundle:
     EarlyFlowEvent: Any
 
 
-def make_early_flow_event_cls(early_n: int = 12):
+def make_early_flow_event_cls(early_n: int = 12) -> Any:
     """
     Create the ctypes.Structure class for EarlyFlowEvent parameterized by early_n.
     Layout matches struct early_flow_event in ebpf/ips_engine.c with explicit padding
     so 64-bit fields (first_ts_ns, last_ts_ns, iat_ns) are 8-byte aligned on both x86_64 and ARM64.
     """
-    # Header before arrays:
-    # u32 schema_version (4)
-    # u8 proto (1), u8 valid_len (1), u8 flags_seen (1), u8 pad1 (1) -> offset 8
-    # u32 ip_a (4), u32 ip_b (4) -> offset 16
-    # u16 port_a (2), u16 port_b (2), u32 initiator_ip (4) -> offset 24
-    # u16 initiator_port (2), u16 pad2 (2), u32 total_pkts (4) -> offset 32
-    # u32 total_bytes (4), u32 pad3 (4) -> offset 40
-    # u64 first_ts_ns (8) -> offset 48
-    # u64 last_ts_ns (8) -> offset 56
-    # u64 iat_ns[EARLY_N - 1] (8 * (N-1)) -> offset 56 + 8*(N-1) (always 8-byte aligned!)
-    # u16 sizes[EARLY_N] (2 * N)
-    # u8 dirs[EARLY_N] (1 * N)
-    # tail padding to multiple of 8 bytes
     raw_tail = 2 * early_n + early_n
     tail_pad = (8 - (raw_tail % 8)) % 8
 
-    fields = [
+    fields: Any = [
         ("schema_version", ctypes.c_uint32),
         ("proto", ctypes.c_uint8),
         ("valid_len", ctypes.c_uint8),
@@ -257,7 +268,7 @@ def make_early_flow_event_cls(early_n: int = 12):
         _pack_ = 1
         _fields_ = fields
 
-    EarlyFlowEvent.EARLY_N = early_n
+    setattr(EarlyFlowEvent, "EARLY_N", early_n)  # noqa: B010
     return EarlyFlowEvent
 
 
@@ -280,7 +291,7 @@ def u32_to_ip(val: int) -> str:
 
 def ip_to_u32(ip_str: str) -> int:
     """Convert dotted-quad IPv4 string to host-order uint32."""
-    return struct.unpack("!I", socket.inet_aton(ip_str))[0]
+    return int(struct.unpack("!I", socket.inet_aton(ip_str))[0])
 
 
 def make_flow_key(src_ip: str, sport: int, dst_ip: str, dport: int, proto: str | int) -> FlowKey:
@@ -322,7 +333,7 @@ def flow_key_to_canonical_tuple(fk: FlowKey) -> Tuple[str, int, str, int, str]:
     )
 
 
-def event_to_dict(ev) -> Dict[str, Any]:
+def event_to_dict(ev: Any) -> Dict[str, Any]:
     """Convert an EarlyFlowEvent ctypes instance to a Python dictionary."""
     valid_len = int(ev.valid_len)
     early_n = getattr(ev, "EARLY_N", len(ev.sizes))
@@ -351,3 +362,7 @@ def event_to_dict(ev) -> Dict[str, Any]:
         "iat_ns": [int(ev.iat_ns[i]) for i in range(iat_count)],
     }
 
+
+if __name__ == "__main__":
+    out = write_generated_c_header()
+    print(f"[+] Wrote {out}")

@@ -2,10 +2,10 @@
 """
 tests/test_shell_permissions.py — Unit tests for A1 (executable .sh mode in git) and A5 (per-class TLS & protocols).
 """
+
 import os
 import ssl
 import subprocess
-import pytest
 
 from traffic.benign_iot_generator import PROFILES, build_tls_context
 
@@ -43,4 +43,3 @@ def test_per_class_protocols_and_tls_contexts():
     if hasattr(ssl, "TLSVersion"):
         assert ctx_therm.maximum_version == ssl.TLSVersion.TLSv1_2
         assert ctx_sensor.maximum_version != ssl.TLSVersion.TLSv1_2
-

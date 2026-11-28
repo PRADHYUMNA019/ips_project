@@ -17,62 +17,7 @@
 #include <uapi/linux/tcp.h>
 #include <uapi/linux/udp.h>
 #include <uapi/linux/in.h>
-
-#ifndef SCHEMA_VERSION
-#define SCHEMA_VERSION 4
-#endif
-
-#ifndef FLOW_IDLE_NS
-#define FLOW_IDLE_NS (120ULL * 1000000000ULL)
-#endif
-
-#ifndef NUM_CHECKPOINTS
-#define NUM_CHECKPOINTS 3
-#endif
-
-#ifndef CKPT_0
-#define CKPT_0 4
-#endif
-
-#ifndef CKPT_1
-#define CKPT_1 8
-#endif
-
-#ifndef CKPT_2
-#define CKPT_2 16
-#endif
-
-#ifndef EARLY_N
-#define EARLY_N 16
-#endif
-
-#ifndef EARLY_N_MINUS_1
-#define EARLY_N_MINUS_1 (EARLY_N - 1)
-#endif
-
-#ifndef FLOW_MAP_MAX
-#define FLOW_MAP_MAX 4096
-#endif
-
-#ifndef VERDICT_MAP_MAX
-#define VERDICT_MAP_MAX 4096
-#endif
-
-#ifndef TIER0_DEFAULT_RATE
-#define TIER0_DEFAULT_RATE 50
-#endif
-
-#ifndef TIER0_DEFAULT_CAPACITY
-#define TIER0_DEFAULT_CAPACITY 100
-#endif
-
-#ifndef TIER0_BLOCK_TTL_NS
-#define TIER0_BLOCK_TTL_NS (30ULL * 1000000000ULL)
-#endif
-
-#define VERDICT_NONE   0
-#define VERDICT_BYPASS 1
-#define VERDICT_DROP   2
+#include "generated_constants.h"
 
 struct flow_key {
     __u32 ip_a;
@@ -250,6 +195,11 @@ int xdp_ips_prog(struct xdp_md *ctx) {
         return XDP_PASS;
     }
     if ((void *)ip + ip_hdr_len > data_end) {
+        return XDP_PASS;
+    }
+
+    // Non-initial IPv4 fragments (offset > 0) carry no L4 header; pass without corrupting flow_state (BUG-07)
+    if (ip->frag_off & bpf_htons(0x1FFF)) {
         return XDP_PASS;
     }
 

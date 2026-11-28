@@ -5,6 +5,7 @@ tests/test_kernel_source_invariants.py — V1 source-text invariant checks on eb
 NOTE: This is a static source-text guard (V1), NOT a compiled or executed test of the C kernel
 code (which requires Linux + BCC/clang in V2).
 """
+
 import os
 import re
 
@@ -25,9 +26,7 @@ def test_emitted_mask_set_after_ringbuf_submit():
 
     # (i) Exactly one emitted_mask |= statement in the entire file
     matches = list(re.finditer(r"rec->emitted_mask\s*\|=", src))
-    assert len(matches) == 1, (
-        f"Expected exactly 1 'rec->emitted_mask |=' statement in ebpf/ips_engine.c, found {len(matches)}"
-    )
+    assert len(matches) == 1, f"Expected exactly 1 'rec->emitted_mask |=' statement in ebpf/ips_engine.c, found {len(matches)}"
 
     # Locate the if (ckpt_hit >= 0) block
     ckpt_block_match = re.search(r"if\s*\(\s*ckpt_hit\s*>=\s*0\s*\)\s*\{", src)
@@ -56,9 +55,7 @@ def test_emitted_mask_set_after_ringbuf_submit():
     submit_pos = submit_match.start()
 
     # (iii) Does NOT appear before ringbuf_reserve
-    assert mask_pos > reserve_pos, (
-        f"emitted_mask |= (at {mask_pos}) must NOT appear before ringbuf_reserve (at {reserve_pos})"
-    )
+    assert mask_pos > reserve_pos, f"emitted_mask |= (at {mask_pos}) must NOT appear before ringbuf_reserve (at {reserve_pos})"
 
     # (ii) Appears after ringbuf_submit and before closing of if (ckpt_hit >= 0) block
     assert submit_pos < mask_pos < block_end, (

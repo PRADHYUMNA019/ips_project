@@ -18,21 +18,21 @@ Executes the full chain on deterministic synthetic smoke data:
  10. Generate 5 colour-blind-safe watermarked figures + caption files under demo/figures/smoke/
  11. Determinism check (--check-determinism): run twice into separate dirs and diff all outputs.
 """
-import os
-import sys
-import json
-import time
-import shutil
-import random
-import hashlib
+
 import argparse
-import tempfile
+import hashlib
+import json
+import os
+import random
+import sys
+import time
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, precision_recall_curve, auc
@@ -42,23 +42,21 @@ os.environ["OMP_NUM_THREADS"] = "4"
 os.environ["MKL_NUM_THREADS"] = "4"
 
 import torch
+
 torch.set_num_threads(4)
 
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, REPO_DIR)
 
-from ips.smoke.synth import generate_smoke_dataset, SMOKE_BANNER
+from ips.smoke.synth import generate_smoke_dataset
 from ips.data.build_splits import verify_split_integrity
-from ips.features import get_feature_names, assert_no_forbidden_features, build_early_vector
+from ips.features import get_feature_names, assert_no_forbidden_features
 from ips.models.train import train_pipeline, extract_matrix_from_df
 from ips.models.eval_offline import (
     run_offline_evaluation,
     score_onnx_model,
-    evaluate_progressive_checkpoints,
 )
-from ips.models.evt import compute_calibration_curve
 from ips.engine.engine import MockBPFBackend, IPSEngine
-from ips.engine.schema import make_flow_key, VERDICT_DROP, VERDICT_BYPASS
 from ips.drift.scenarios import run_method_on_scenario, run_all_drift_scenarios
 from ips.drift.guard import GuardConfig
 from ips.drift.evasion_cost import run_cost_of_evasion_experiment
@@ -80,16 +78,31 @@ PALETTE = {
 def add_smoke_watermark(fig):
     """Stamp prominent diagonal + header watermark per Prompt 8 Rule R1."""
     fig.text(
-        0.5, 0.5, WATERMARK_TEXT,
-        fontsize=20, color="#B00020", alpha=0.18,
-        ha="center", va="center", rotation=24, fontweight="bold",
-        transform=fig.transFigure, zorder=100,
+        0.5,
+        0.5,
+        WATERMARK_TEXT,
+        fontsize=20,
+        color="#B00020",
+        alpha=0.18,
+        ha="center",
+        va="center",
+        rotation=24,
+        fontweight="bold",
+        transform=fig.transFigure,
+        zorder=100,
     )
     fig.text(
-        0.5, 0.99, WATERMARK_TEXT,
-        fontsize=9, color="#B00020", alpha=0.95,
-        ha="center", va="top", fontweight="bold",
-        transform=fig.transFigure, zorder=101,
+        0.5,
+        0.99,
+        WATERMARK_TEXT,
+        fontsize=9,
+        color="#B00020",
+        alpha=0.95,
+        ha="center",
+        va="top",
+        fontweight="bold",
+        transform=fig.transFigure,
+        zorder=101,
     )
 
 
@@ -124,17 +137,26 @@ def run_mock_closed_loop_demo(card_path: str, early_n: int = 16, seed: int = 42)
 
     # 1. Attack flow (high-rate large payload -> triggers DROP at checkpoint 4, remains sticky)
     for pkt_i in range(1, 20):
-        act, ev = backend.simulate_packet(
-            "10.0.1.4", 44444, "10.0.2.10", 8443, "TCP", 1450, 0, t0 + pkt_i * 1_000_000
-        )
+        act, ev = backend.simulate_packet("10.0.1.4", 44444, "10.0.2.10", 8443, "TCP", 1450, 0, t0 + pkt_i * 1_000_000)
         if ev is not None:
             d = engine.handle_early_flow_event(ev, now_ns=t0 + pkt_i * 1_000_000)
-            decisions.append({"flow": "attack_exfil_1", "pkt": pkt_i, "verdict": d["verdict_written"], "score": round(float(d["score"]), 6)})
+            decisions.append(
+                {"flow": "attack_exfil_1", "pkt": pkt_i, "verdict": d["verdict_written"], "score": round(float(d["score"]), 6)}
+            )
     # Test sticky DROP invariant explicitly: feed a low-score later checkpoint event on same 5-tuple
     fake_benign_late_ev = {
-        "ip_a": "10.0.1.4", "port_a": 44444, "ip_b": "10.0.2.10", "port_b": 8443, "proto": "TCP",
-        "sizes": [64] * 16, "dirs": [i % 2 for i in range(16)], "iat_ns": [10_000_000_000] * 15,
-        "valid_len": 16, "checkpoint_idx": 2, "first_ts_ns": t0, "last_ts_ns": t0 + 20_000_000,
+        "ip_a": "10.0.1.4",
+        "port_a": 44444,
+        "ip_b": "10.0.2.10",
+        "port_b": 8443,
+        "proto": "TCP",
+        "sizes": [64] * 16,
+        "dirs": [i % 2 for i in range(16)],
+        "iat_ns": [10_000_000_000] * 15,
+        "valid_len": 16,
+        "checkpoint_idx": 2,
+        "first_ts_ns": t0,
+        "last_ts_ns": t0 + 20_000_000,
     }
     sticky_d = engine.handle_early_flow_event(fake_benign_late_ev, now_ns=t0 + 25_000_000)
 
@@ -145,7 +167,9 @@ def run_mock_closed_loop_demo(card_path: str, early_n: int = 16, seed: int = 42)
         )
         if ev is not None:
             d = engine.handle_early_flow_event(ev, now_ns=t0 + pkt_i * 10_000_000_000)
-            decisions.append({"flow": "benign_sensor_1", "pkt": pkt_i, "verdict": d["verdict_written"], "score": round(float(d["score"]), 6)})
+            decisions.append(
+                {"flow": "benign_sensor_1", "pkt": pkt_i, "verdict": d["verdict_written"], "score": round(float(d["score"]), 6)}
+            )
 
     # 3. Watchdog load-shedding activation & cooldown recovery
     engine.last_watchdog_s = 99.0
@@ -223,7 +247,7 @@ def generate_smoke_figures(
     ax2.grid(True, ls=":", alpha=0.6)
 
     add_smoke_watermark(fig)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.95))
     p_a = os.path.join(fig_dir, "fig_a_roc_pr_per_checkpoint.png")
     fig.savefig(p_a, dpi=150)
     plt.close(fig)
@@ -239,7 +263,7 @@ def generate_smoke_figures(
     single_pts = []
     raw_vlens = test_df["raw_valid_len"].to_numpy(dtype=int) if "raw_valid_len" in test_df.columns else np.full(len(test_df), 16)
     tot_pkts = test_df["total_pkts"].to_numpy(dtype=int) if "total_pkts" in test_df.columns else raw_vlens
-    atk_mask = (y_true == 1)
+    atk_mask = y_true == 1
     for k in ckpts:
         scores_k = ckpt_metrics_summary[k][0]
         tau_k = float(ckpt_cfg[str(k)].get("tau_equal_01", ckpt_cfg[str(k)].get("tau_equal_001", 0.05)))
@@ -266,7 +290,10 @@ def generate_smoke_figures(
             ax.annotate(
                 f"Prog ({r['alpha_spending']})",
                 (float(r["mean_attack_packets_leaked"]), float(r["tpr"])),
-                textcoords="offset points", xytext=(6, 6), fontsize=8, color=PALETTE["vermillion"],
+                textcoords="offset points",
+                xytext=(6, 6),
+                fontsize=8,
+                color=PALETTE["vermillion"],
             )
 
     ax.set_xlabel("Mean Attack Payload Packets Leaked Before Verdict (lower is better)")
@@ -276,7 +303,7 @@ def generate_smoke_figures(
     ax.legend(loc="lower right", fontsize=8)
     ax.grid(True, ls=":", alpha=0.6)
     add_smoke_watermark(fig)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.95))
     p_b = os.path.join(fig_dir, "fig_b_detection_vs_packets_leaked.png")
     fig.savefig(p_b, dpi=150)
     plt.close(fig)
@@ -309,7 +336,7 @@ def generate_smoke_figures(
     ax.legend(loc="lower right", fontsize=8)
     ax.grid(True, which="both", ls=":", alpha=0.6)
     add_smoke_watermark(fig)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.95))
     p_c = os.path.join(fig_dir, "fig_c_calibration_target_vs_achieved_fpr.png")
     fig.savefig(p_c, dpi=150)
     plt.close(fig)
@@ -349,7 +376,7 @@ def generate_smoke_figures(
         if idx in (0, 2):
             ax.legend(loc="best", fontsize=7)
     add_smoke_watermark(fig)
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
     p_d = os.path.join(fig_dir, "fig_d_drift_s1_s5_fpr_over_time.png")
     fig.savefig(p_d, dpi=150)
     plt.close(fig)
@@ -384,7 +411,7 @@ def generate_smoke_figures(
         ax.legend(loc="lower right", fontsize=8)
         ax.grid(True, ls=":", alpha=0.6)
     add_smoke_watermark(fig)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.95))
     p_e = os.path.join(fig_dir, "fig_e_cost_of_evasion_curve.png")
     fig.savefig(p_e, dpi=150)
     plt.close(fig)
@@ -396,7 +423,7 @@ def generate_smoke_figures(
         )
 
 
-def run_once(work_dir: str, fig_dir: str = None, epochs: int = 50, seed: int = 42) -> Dict[str, Any]:
+def run_once(work_dir: str, fig_dir: Optional[str] = None, epochs: int = 50, seed: int = 42) -> Dict[str, Any]:
     """Run the entire synthetic smoke pipeline deterministically into work_dir."""
     random.seed(seed)
     np.random.seed(seed)
@@ -549,7 +576,7 @@ def main():
         diffs = {}
         for k, h1 in res1["hashes"].items():
             h2 = res2["hashes"].get(k)
-            diffs[k] = ("IDENTICAL" if h1 == h2 else f"DIFF ({h1[:12]} vs {h2[:12]})")
+            diffs[k] = "IDENTICAL" if h1 == h2 else f"DIFF ({h1[:12]} vs {h2[:12]})"
         n_identical = sum(1 for v in diffs.values() if v == "IDENTICAL")
         report["determinism_check"] = {
             "total_files": len(diffs),

@@ -12,12 +12,14 @@ Does NOT download the 1.8 GB pcap archive in Prompt 8 mode.
 Saves to %IPS_DATA_ROOT%\\tqh_c2 (default D:\\ips_data\\tqh_c2 if D: exists, else datasets\\raw\\tqh_c2).
 Verifies SHA-256 against SHA256SUMS_v120.txt.
 """
+
 import os
 import sys
 import hashlib
 import argparse
-import urllib.request
 import urllib.error
+import urllib.parse
+import urllib.request
 
 ZENODO_RECORD_ID = "21523144"
 ZENODO_BASE = f"https://zenodo.org/records/{ZENODO_RECORD_ID}/files"
@@ -48,7 +50,10 @@ def sha256_file(path: str) -> str:
 
 
 def download_resumable(url: str, dest: str):
-    """Download URL to dest with HTTP Range resume support."""
+    """Download HTTPS URL to dest with HTTP Range resume support (validates scheme per BUG-05 / B310)."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError(f"Refusing non-HTTPS or malformed download URL: {url!r}")
     os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
     part = dest + ".part"
     existing = os.path.getsize(part) if os.path.exists(part) else 0
@@ -61,9 +66,9 @@ def download_resumable(url: str, dest: str):
     if existing > 0:
         headers["Range"] = f"bytes={existing}-"
 
-    req = urllib.request.Request(url, headers=headers)
+    req = urllib.request.Request(url, headers=headers)  # noqa: S310 (HTTPS scheme validated above)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
             status = getattr(resp, "status", 200)
             mode = "ab" if (status == 206 and existing > 0) else "wb"
             with open(part, mode) as out:

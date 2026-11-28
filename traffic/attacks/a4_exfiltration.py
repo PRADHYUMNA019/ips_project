@@ -5,6 +5,7 @@ traffic/attacks/a4_exfiltration.py — A4: TLS Exfiltration attack.
 Transmits large payloads in high-volume chunks (800-1460 B) upstream over TLS
 simulating sensitive sensor / configuration / credential data theft.
 """
+
 import ssl
 import socket
 import time
@@ -18,9 +19,9 @@ sys.path.insert(0, REPO_DIR)
 from traffic.manifest import ManifestWriter
 
 
-def run_a4_exfil(target_ip="10.0.2.10", target_port=8883,
-                 chunk_size=1400, duration_s=20.0,
-                 manifest_path="results/manifest.csv", run_id="run_exp"):
+def run_a4_exfil(
+    target_ip="10.0.2.10", target_port=8883, chunk_size=1400, duration_s=20.0, manifest_path="results/manifest.csv", run_id="run_exp"
+):
     print(f"[A4 EXFILTRATION] Uploading high-volume TLS payloads to {target_ip}:{target_port} for {duration_s}s")
     writer = ManifestWriter(manifest_path, run_id=run_id)
     start_ts = time.time()
@@ -75,4 +76,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_a4_exfil(args.target, args.port, args.chunk_size, args.duration, args.manifest, args.run_id)
-

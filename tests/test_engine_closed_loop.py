@@ -2,13 +2,12 @@
 """
 tests/test_engine_closed_loop.py — V1 unit tests for WP7 (ips/engine/engine.py and ips/eval/harness.py).
 """
+
 import pytest
 import numpy as np
 from ips.engine.schema import (
     load_system_config,
     make_flow_key,
-    VERDICT_NONE,
-    VERDICT_BYPASS,
     VERDICT_DROP,
 )
 from ips.engine.engine import IPSEngine, MockBPFBackend
@@ -65,7 +64,7 @@ def test_enforce_per_flow_drop_and_ttl_expiry():
 
     now_ns = 1_000_000_000
     # Send 4 attack packets on port 50001 -> triggers EARLY_FLOW and DROP verdict
-    for i in range(4):
+    for _i in range(4):
         now_ns += 40_000
         act, ev = backend.simulate_packet("10.0.1.4", 50001, "10.0.2.10", 8443, "TCP", 1400, 0, now_ns)
         assert act == "XDP_PASS"
@@ -236,16 +235,13 @@ def test_operational_harm_and_netem_impairment_c10_c11(tmp_path):
     assert harm["recovery_time_s"] > 60.0
 
     df_tr = generate_smoke_dataset(
-        n_benign=80, n_attack=0, early_n=8, session_id="smoke_c11_tr",
-        out_csv=str(tmp_path / "tr.csv"), seed=401
+        n_benign=80, n_attack=0, early_n=8, session_id="smoke_c11_tr", out_csv=str(tmp_path / "tr.csv"), seed=401
     )
     df_cal = generate_smoke_dataset(
-        n_benign=60, n_attack=0, early_n=8, session_id="smoke_c11_cal",
-        out_csv=str(tmp_path / "cal.csv"), seed=402
+        n_benign=60, n_attack=0, early_n=8, session_id="smoke_c11_cal", out_csv=str(tmp_path / "cal.csv"), seed=402
     )
     df_te = generate_smoke_dataset(
-        n_benign=60, n_attack=30, early_n=8, session_id="smoke_c11_te",
-        out_csv=str(tmp_path / "te.csv"), seed=403
+        n_benign=60, n_attack=30, early_n=8, session_id="smoke_c11_te", out_csv=str(tmp_path / "te.csv"), seed=403
     )
     imp_df = run_impairment_study(df_tr, df_cal, df_te, early_n=8, epochs=3, seed=42, out_dir=str(tmp_path))
     assert len(imp_df) == 15  # 3 ablations * 5 impairment profiles
@@ -257,7 +253,7 @@ def test_ringbuf_malformed_event_and_schema_mismatch_b1():
     """B1 (DEF-04): Ringbuffer event parser safely rejects truncated buffer and schema mismatches, triggering shedding after >10."""
     import ctypes
     from ips.engine.engine import IPSEngine, MockBPFBackend
-    from ips.engine.schema import make_ctypes_schemas, SCHEMA_VERSION
+    from ips.engine.schema import make_ctypes_schemas
 
     backend = MockBPFBackend(early_n=16, checkpoints=[4, 8, 16])
     engine = IPSEngine(backend=backend)
@@ -298,30 +294,60 @@ def test_confusion_matrix_and_decision_metrics_b2():
     decisions = []
     # 10 TP
     for i in range(10):
-        decisions.append({
-            "ip_a": "10.0.1.4", "port_a": 1000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
-            "proto": "TCP", "initiator_ip": "10.0.1.4", "is_anomaly": True,
-            "time_to_verdict_ms": 2.5, "payload_packets_at_verdict": 4,
-        })
+        decisions.append(
+            {
+                "ip_a": "10.0.1.4",
+                "port_a": 1000 + i,
+                "ip_b": "10.0.2.10",
+                "port_b": 8883,
+                "proto": "TCP",
+                "initiator_ip": "10.0.1.4",
+                "is_anomaly": True,
+                "time_to_verdict_ms": 2.5,
+                "payload_packets_at_verdict": 4,
+            }
+        )
     # 3 FN
     for i in range(3):
-        decisions.append({
-            "ip_a": "10.0.1.4", "port_a": 2000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
-            "proto": "TCP", "initiator_ip": "10.0.1.4", "is_anomaly": False,
-        })
+        decisions.append(
+            {
+                "ip_a": "10.0.1.4",
+                "port_a": 2000 + i,
+                "ip_b": "10.0.2.10",
+                "port_b": 8883,
+                "proto": "TCP",
+                "initiator_ip": "10.0.1.4",
+                "is_anomaly": False,
+            }
+        )
     # 2 FP
     for i in range(2):
-        decisions.append({
-            "ip_a": "10.0.1.11", "port_a": 3000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
-            "proto": "TCP", "initiator_ip": "10.0.1.11", "is_anomaly": True,
-            "time_to_verdict_ms": 3.0, "payload_packets_at_verdict": 4,
-        })
+        decisions.append(
+            {
+                "ip_a": "10.0.1.11",
+                "port_a": 3000 + i,
+                "ip_b": "10.0.2.10",
+                "port_b": 8883,
+                "proto": "TCP",
+                "initiator_ip": "10.0.1.11",
+                "is_anomaly": True,
+                "time_to_verdict_ms": 3.0,
+                "payload_packets_at_verdict": 4,
+            }
+        )
     # 85 TN
     for i in range(85):
-        decisions.append({
-            "ip_a": "10.0.1.11", "port_a": 4000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
-            "proto": "TCP", "initiator_ip": "10.0.1.11", "is_anomaly": False,
-        })
+        decisions.append(
+            {
+                "ip_a": "10.0.1.11",
+                "port_a": 4000 + i,
+                "ip_b": "10.0.2.10",
+                "port_b": 8883,
+                "proto": "TCP",
+                "initiator_ip": "10.0.1.11",
+                "is_anomaly": False,
+            }
+        )
 
     res = evaluate_run_metrics(decisions, attacker_ips=["10.0.1.4"])
 
@@ -342,8 +368,15 @@ def test_confusion_matrix_and_decision_metrics_b2():
 
     # Edge Case 1: All Negatives (0 attack flows, 50 benign flows)
     all_neg = [
-        {"ip_a": "10.0.1.11", "port_a": 5000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
-         "proto": "TCP", "initiator_ip": "10.0.1.11", "is_anomaly": False}
+        {
+            "ip_a": "10.0.1.11",
+            "port_a": 5000 + i,
+            "ip_b": "10.0.2.10",
+            "port_b": 8883,
+            "proto": "TCP",
+            "initiator_ip": "10.0.1.11",
+            "is_anomaly": False,
+        }
         for i in range(50)
     ]
     res_neg = evaluate_run_metrics(all_neg, attacker_ips=["10.0.1.4"])
@@ -352,8 +385,15 @@ def test_confusion_matrix_and_decision_metrics_b2():
 
     # Edge Case 2: All Positives (50 attack flows, 0 benign flows)
     all_pos = [
-        {"ip_a": "10.0.1.4", "port_a": 6000 + i, "ip_b": "10.0.2.10", "port_b": 8883,
-         "proto": "TCP", "initiator_ip": "10.0.1.4", "is_anomaly": True}
+        {
+            "ip_a": "10.0.1.4",
+            "port_a": 6000 + i,
+            "ip_b": "10.0.2.10",
+            "port_b": 8883,
+            "proto": "TCP",
+            "initiator_ip": "10.0.1.4",
+            "is_anomaly": True,
+        }
         for i in range(50)
     ]
     res_pos = evaluate_run_metrics(all_pos, attacker_ips=["10.0.1.4"])
@@ -385,7 +425,6 @@ def test_leakage_reconciliation_against_egress_pcap_b8():
 def test_sticky_drop_verdict_c2():
     """C2: Verify DROP verdicts are sticky and never overwritten by subsequent benign checkpoints."""
     from ips.engine.engine import IPSEngine, MockBPFBackend
-    from ips.engine.schema import make_flow_key, VERDICT_DROP, VERDICT_BYPASS
 
     backend = MockBPFBackend(early_n=16, checkpoints=[4, 8, 16])
     engine = IPSEngine(backend=backend, mode_override="enforce", bypass_override=True)
@@ -395,9 +434,17 @@ def test_sticky_drop_verdict_c2():
 
     # 1. First event at checkpoint 4: anomalous -> triggers DROP
     ev4 = {
-        "ip_a": "10.0.1.4", "port_a": 55555, "ip_b": "10.0.2.10", "port_b": 8883,
-        "proto": "TCP", "initiator_ip": "10.0.1.4", "valid_len": 4, "checkpoint_idx": 0,
-        "sizes": [100, 100, 100, 100], "dirs": [0, 0, 0, 0], "iat_ns": [1000, 1000, 1000],
+        "ip_a": "10.0.1.4",
+        "port_a": 55555,
+        "ip_b": "10.0.2.10",
+        "port_b": 8883,
+        "proto": "TCP",
+        "initiator_ip": "10.0.1.4",
+        "valid_len": 4,
+        "checkpoint_idx": 0,
+        "sizes": [100, 100, 100, 100],
+        "dirs": [0, 0, 0, 0],
+        "iat_ns": [1000, 1000, 1000],
     }
     engine.ckpt_thresholds[4] = 0.0001  # Force anomaly at ckpt 4
     dec4 = engine.handle_early_flow_event(ev4, now_ns=now_ns)
@@ -406,9 +453,17 @@ def test_sticky_drop_verdict_c2():
 
     # 2. Subsequent event on same flow at final checkpoint 16: scores benign
     ev16 = {
-        "ip_a": "10.0.1.4", "port_a": 55555, "ip_b": "10.0.2.10", "port_b": 8883,
-        "proto": "TCP", "initiator_ip": "10.0.1.4", "valid_len": 16, "checkpoint_idx": 2,
-        "sizes": [100] * 16, "dirs": [0] * 16, "iat_ns": [1000] * 15,
+        "ip_a": "10.0.1.4",
+        "port_a": 55555,
+        "ip_b": "10.0.2.10",
+        "port_b": 8883,
+        "proto": "TCP",
+        "initiator_ip": "10.0.1.4",
+        "valid_len": 16,
+        "checkpoint_idx": 2,
+        "sizes": [100] * 16,
+        "dirs": [0] * 16,
+        "iat_ns": [1000] * 15,
     }
     engine.threshold = 999.0
     engine.ckpt_thresholds[16] = 999.0  # Force benign
@@ -459,8 +514,14 @@ def test_engine_loads_configured_model_card_and_benign_reaches_bypass_p9_1e(tmp_
     # Match synth.py benign sensor profile: client-first (0,1,0,1), sizes (64B up / 48B down), 10s (10_000_000_000 ns) cadence
     for pkt_i in range(1, 18):
         _, ev = backend.simulate_packet(
-            "10.0.1.11", 51001, "10.0.2.10", 8883, "TCP",
-            48 if (pkt_i - 1) % 2 == 1 else 64, (pkt_i - 1) % 2, t0 + pkt_i * 10_000_000_000,
+            "10.0.1.11",
+            51001,
+            "10.0.2.10",
+            8883,
+            "TCP",
+            48 if (pkt_i - 1) % 2 == 1 else 64,
+            (pkt_i - 1) % 2,
+            t0 + pkt_i * 10_000_000_000,
         )
         if ev is not None:
             d = engine.handle_early_flow_event(ev, now_ns=t0 + pkt_i * 10_000_000_000)
@@ -468,10 +529,3 @@ def test_engine_loads_configured_model_card_and_benign_reaches_bypass_p9_1e(tmp_
     assert benign_verdicts == ["CONTINUE", "CONTINUE", "BYPASS"], (
         f"Benign sensor flow expected ['CONTINUE', 'CONTINUE', 'BYPASS'], got {benign_verdicts}"
     )
-
-
-
-
-
-
-

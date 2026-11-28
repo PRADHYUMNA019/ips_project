@@ -2,10 +2,10 @@
 """
 tests/test_manifest.py — Unit tests for ground-truth manifest logger.
 """
+
 import os
 import tempfile
-import pytest
-from traffic.manifest import ManifestWriter, MANIFEST_HEADER
+from traffic.manifest import ManifestWriter
 
 
 def test_manifest_writer_and_reader():
@@ -63,4 +63,3 @@ def test_manifest_writer_and_reader():
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-

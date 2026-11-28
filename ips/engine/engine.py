@@ -15,16 +15,21 @@ Responsibilities:
   - Runs the 1 Hz Watchdog / Load Shedder that toggles cfg_map[0].shed = 1 on
     ring-buffer pressure or high lag and recovers after cooldown_s.
 """
+
+import argparse
+import ctypes
+import json
+import logging
 import os
+import socket
 import sys
 import time
-import json
-import ctypes
-import socket
-import argparse
-from typing import Dict, Any, Optional, List, Tuple
+from collections import OrderedDict
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import yaml
+
+logger = logging.getLogger(__name__)
 
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
@@ -56,17 +61,28 @@ class MockBPFBackend:
     for deterministic V1 unit testing without Linux root/BCC.
     """
 
-    def __init__(self, early_n: int = 16, checkpoints: Optional[List[int]] = None):
+    def __init__(
+        self,
+        early_n: int = 16,
+        checkpoints: Optional[List[int]] = None,
+        flow_map_max: int = 4096,
+        verdict_map_max: int = 4096,
+        tier0_map_max: int = 1024,
+    ):
         if checkpoints is not None and len(checkpoints) > 0:
             self.checkpoints = sorted([int(x) for x in checkpoints])
             self.early_n = max(int(early_n), max(self.checkpoints))
         else:
             self.early_n = int(early_n)
             self.checkpoints = [self.early_n]
+        self.flow_map_max = max(1, int(flow_map_max))
+        self.verdict_map_max = max(1, int(verdict_map_max))
+        self.tier0_map_max = max(1, int(tier0_map_max))
         self.schemas = make_ctypes_schemas(self.early_n)
         self.xdp_mode = "mock-userspace"
-        self.verdict_map: Dict[bytes, Tuple[int, int]] = {}  # key_bytes -> (action, expiry_ns)
-        self.flow_state: Dict[bytes, Dict[str, Any]] = {}
+        self.verdict_map: OrderedDict[bytes, Tuple[int, int]] = OrderedDict()  # key_bytes -> (action, expiry_ns)
+        self.flow_state: OrderedDict[bytes, Dict[str, Any]] = OrderedDict()
+        self.tier0_map: OrderedDict[str, Dict[str, int]] = OrderedDict()
         self.cfg = {
             "lan_ifindex": 1,
             "shed": 0,
@@ -88,9 +104,15 @@ class MockBPFBackend:
         }
         self.simulate_ringbuf_full = False
         self.flow_idle_ns = 120 * 1_000_000_000
+        self.tier0_block_ttl_ns = 30 * 1_000_000_000
 
     def set_verdict(self, fk, action: int, expiry_ns: int):
-        self.verdict_map[bytes(fk)] = (int(action), int(expiry_ns))
+        k = bytes(fk)
+        if k in self.verdict_map:
+            self.verdict_map.move_to_end(k)
+        elif len(self.verdict_map) >= self.verdict_map_max:
+            self.verdict_map.popitem(last=False)
+        self.verdict_map[k] = (int(action), int(expiry_ns))
 
     def get_verdict(self, fk, now_ns: int) -> int:
         k = bytes(fk)
@@ -101,6 +123,42 @@ class MockBPFBackend:
             return action
         del self.verdict_map[k]
         return VERDICT_NONE
+
+    def check_tier0_syn(self, src_ip: str, now_ns: int) -> bool:
+        """Mirror ebpf/ips_engine.c::check_tier0_syn per-source SYN token bucket."""
+        rate = int(self.cfg.get("tier0_rate", 50)) or 50
+        cap = int(self.cfg.get("tier0_capacity", 100)) or 100
+        cap_fp = cap * 1000
+
+        if src_ip not in self.tier0_map:
+            if len(self.tier0_map) >= self.tier0_map_max:
+                self.tier0_map.popitem(last=False)
+            self.tier0_map[src_ip] = {
+                "last_ts_ns": int(now_ns),
+                "blocked_until_ns": 0,
+                "tokens_fp": (cap - 1) * 1000 if cap > 1 else 0,
+            }
+            return False
+
+        self.tier0_map.move_to_end(src_ip)
+        b = self.tier0_map[src_ip]
+        if b["blocked_until_ns"] > now_ns:
+            self.stats["pkts_dropped_tier0"] += 1
+            return True
+
+        elapsed_ns = max(0, int(now_ns) - b["last_ts_ns"])
+        add_fp = (elapsed_ns * rate) // 1_000_000
+        new_tokens = min(cap_fp, b["tokens_fp"] + add_fp)
+        b["last_ts_ns"] = int(now_ns)
+
+        if new_tokens < 1000:
+            b["tokens_fp"] = 0
+            b["blocked_until_ns"] = int(now_ns) + self.tier0_block_ttl_ns
+            self.stats["pkts_dropped_tier0"] += 1
+            return True
+
+        b["tokens_fp"] = int(new_tokens - 1000)
+        return False
 
     def set_shed(self, shed: int):
         self.cfg["shed"] = int(shed)
@@ -135,6 +193,10 @@ class MockBPFBackend:
             self.stats["pkts_bypassed"] += 1
             return ("XDP_PASS_BYPASS", None)
 
+        if is_syn_only and int(self.cfg.get("tier0_enabled", 1)) == 1:
+            if self.check_tier0_syn(src_ip, now_ns):
+                return ("XDP_DROP", None)
+
         k = bytes(fk)
         tup = flow_key_to_canonical_tuple(fk)
         reinit = False
@@ -146,6 +208,8 @@ class MockBPFBackend:
                 reinit = True
 
         if k not in self.flow_state or reinit:
+            if k not in self.flow_state and len(self.flow_state) >= self.flow_map_max:
+                self.flow_state.popitem(last=False)
             self.flow_state[k] = {
                 "schema_version": SCHEMA_VERSION,
                 "ip_a": tup[0],
@@ -167,6 +231,7 @@ class MockBPFBackend:
                 "emitted_mask": 0,
             }
 
+        self.flow_state.move_to_end(k)
         rec = self.flow_state[k]
         rec["total_pkts"] += 1
         rec["total_bytes"] += payload_len + 40
@@ -212,7 +277,7 @@ class MockBPFBackend:
             ev["valid_len"] = cur_vlen
             ev["checkpoint_idx"] = ckpt_hit
             self.stats["events_emitted"] += 1
-            rec["emitted_mask"] |= (1 << ckpt_hit)
+            rec["emitted_mask"] |= 1 << ckpt_hit
             return ("XDP_PASS", ev)
 
         return ("XDP_PASS", None)
@@ -236,11 +301,12 @@ class BCCKernelBackend:
         self.attached_devs = []
         self.xdp_mode = "unknown"
 
-        c_path = os.path.join(REPO_DIR, "ebpf", "ips_engine.c")
+        ebpf_dir = os.path.join(REPO_DIR, "ebpf")
+        c_path = os.path.join(ebpf_dir, "ips_engine.c")
         with open(c_path, "r", encoding="utf-8") as f:
             c_src = generate_c_header(config) + "\n" + f.read()
 
-        self.bpf = BPF(text=c_src)
+        self.bpf = BPF(text=c_src, cflags=[f"-I{ebpf_dir}"])
         self.fn = self.bpf.load_func("xdp_ips_prog", BPF.XDP)
 
         for dev in (lan_dev, wan_dev):
@@ -295,16 +361,16 @@ class BCCKernelBackend:
             for cpu_st in per_cpu:
                 for k in totals:
                     totals[k] += int(getattr(cpu_st, k, 0))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to read stats_map: %s", exc)
         return totals
 
     def close(self):
         for dev, flags in self.attached_devs:
             try:
                 self.bpf.remove_xdp(dev, flags)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to detach XDP from %s: %s", dev, exc)
         self.attached_devs.clear()
 
 
@@ -325,7 +391,12 @@ class IPSEngine:
 
         raw_ckpts = sys_cfg.get("checkpoints", None)
         early_n_cfg = sys_cfg.get("early_n", None)
-        if backend is not None and hasattr(backend, "checkpoints") and backend.checkpoints == [backend.early_n] and early_n_cfg == backend.early_n:
+        if (
+            backend is not None
+            and hasattr(backend, "checkpoints")
+            and backend.checkpoints == [backend.early_n]
+            and early_n_cfg == backend.early_n
+        ):
             self.early_n = int(backend.early_n)
             self.checkpoints = list(backend.checkpoints)
         elif raw_ckpts and len(raw_ckpts) > 0:
@@ -363,10 +434,17 @@ class IPSEngine:
         self.backend = (
             backend
             if backend is not None
-            else MockBPFBackend(early_n=self.early_n, checkpoints=self.checkpoints)
+            else MockBPFBackend(
+                early_n=self.early_n,
+                checkpoints=self.checkpoints,
+                flow_map_max=int(sys_cfg.get("flow_map_max", 4096)),
+                verdict_map_max=int(sys_cfg.get("verdict_map_max", 4096)),
+            )
         )
         self.decisions_log: List[Dict[str, Any]] = []
         self.watchdog_log: List[Dict[str, Any]] = []
+        self.load_warnings: List[str] = []
+        self.schema_mismatch_reasons: List[str] = []
         self.schema_mismatch_count = 0
 
         # Load model card & ONNX Runtime sessions (global + per-checkpoint) if available
@@ -414,17 +492,19 @@ class IPSEngine:
                 for k_str, cinfo in card.get("checkpoint_models", {}).items():
                     k_int = int(k_str)
                     if k_int in self.checkpoints:
-                        self.ckpt_thresholds[k_int] = float(
-                            cinfo.get(tau_key, cinfo.get("tau_equal_001", self.threshold))
-                        )
+                        self.ckpt_thresholds[k_int] = float(cinfo.get(tau_key, cinfo.get("tau_equal_001", self.threshold)))
                         c_onnx = cinfo.get("onnx_int8_path", cinfo.get("onnx_fp32_path", ""))
                         if ort is not None and c_onnx and os.path.exists(c_onnx):
                             try:
                                 self.ckpt_sessions[k_int] = ort.InferenceSession(c_onnx, providers=["CPUExecutionProvider"])
-                            except Exception:
-                                pass
-            except Exception:
-                pass
+                            except Exception as exc:
+                                msg = f"Failed to load checkpoint ONNX {c_onnx}: {exc}"
+                                logger.warning(msg)
+                                self.load_warnings.append(msg)
+            except Exception as exc:
+                msg = f"Failed to load model card {card_path}: {exc}"
+                logger.warning(msg)
+                self.load_warnings.append(msg)
 
         explicit_model = eng_cfg.get("model_path") or sys_cfg.get("model_path")
         if explicit_model:
@@ -439,7 +519,10 @@ class IPSEngine:
                 in_shape = sess.get_inputs()[0].shape
                 if len(in_shape) >= 2 and in_shape[1] == (3 * self.early_n + 8):
                     self.ort_session = sess
-            except Exception:
+            except Exception as exc:
+                msg = f"Failed to load global ONNX {onnx_path}: {exc}"
+                logger.warning(msg)
+                self.load_warnings.append(msg)
                 self.ort_session = None
 
     def score_vector(self, vec: np.ndarray, ckpt_n: Optional[int] = None) -> Tuple[float, np.ndarray, float]:
@@ -452,7 +535,7 @@ class IPSEngine:
         t0 = time.perf_counter()
         n_win = int(ckpt_n) if ckpt_n is not None else self.early_n
         mask = build_valid_mask_matrix(vec)
-        vec_masked = (vec.astype(np.float32) * mask)
+        vec_masked = vec.astype(np.float32) * mask
         x = vec_masked.reshape(1, -1).astype(np.float32)
 
         sess = self.ckpt_sessions.get(n_win, None)
@@ -468,10 +551,10 @@ class IPSEngine:
             recon[:n_win] = 0.08
             recon[2 * n_win : 3 * n_win - 1] = 5.4 / 7.0
             agg_start = 3 * n_win - 1
-            recon[agg_start + 0] = 0.04   # bytes_up
-            recon[agg_start + 1] = 0.04   # bytes_down
-            recon[agg_start + 5] = 0.77   # mean_log_iat / 7.0
-            recon[agg_start + 7] = 0.08   # first_payload_size
+            recon[agg_start + 0] = 0.04  # bytes_up
+            recon[agg_start + 1] = 0.04  # bytes_down
+            recon[agg_start + 5] = 0.77  # mean_log_iat / 7.0
+            recon[agg_start + 7] = 0.08  # first_payload_size
         sq_err = ((vec_masked - recon) ** 2) * mask
         mse = float(np.sum(sq_err) / max(1.0, float(np.sum(mask))))
         infer_ms = (time.perf_counter() - t0) * 1000.0
@@ -490,15 +573,15 @@ class IPSEngine:
 
         ev_struct = ctypes.cast(data, ctypes.POINTER(self.backend.schemas.EarlyFlowEvent)).contents
         if ev_struct.schema_version != SCHEMA_VERSION:
-            self._handle_schema_mismatch(
-                f"Schema version mismatch: event has {ev_struct.schema_version}, engine expects {SCHEMA_VERSION}"
-            )
+            self._handle_schema_mismatch(f"Schema version mismatch: event has {ev_struct.schema_version}, engine expects {SCHEMA_VERSION}")
             return None
 
         return event_to_dict(ev_struct)
 
     def _handle_schema_mismatch(self, reason: str):
         self.schema_mismatch_count += 1
+        self.schema_mismatch_reasons.append(reason)
+        logger.warning("Ring-buffer schema mismatch (#%d): %s", self.schema_mismatch_count, reason)
         if hasattr(self.backend, "stats") and "schema_mismatch" in self.backend.stats:
             self.backend.stats["schema_mismatch"] += 1
         if self.schema_mismatch_count > 10:
@@ -541,7 +624,7 @@ class IPSEngine:
         thresh = self.ckpt_thresholds.get(k_win, self.threshold) if self.threshold == self._loaded_threshold else self.threshold
 
         is_anomaly = bool(score > thresh)
-        is_final_checkpoint = (k_win >= self.checkpoints[-1])
+        is_final_checkpoint = k_win >= self.checkpoints[-1]
         first_ts = int(ev_dict.get("first_ts_ns", now_ns))
         last_ts = int(ev_dict.get("last_ts_ns", now_ns))
         flow_observation_ms = max(0.0, (last_ts - first_ts) / 1e6)
@@ -678,7 +761,8 @@ def run_cli():
     print(f"[*] IPS Engine v2 started | mode={engine.mode} | bypass={engine.bypass_enabled} | xdp_mode={backend.xdp_mode}")
 
     if not args.mock:
-        def _ringbuf_cb(ctx, data, size):
+
+        def _ringbuf_cb(_ctx, data, size):
             ev_dict = engine.parse_ringbuf_event(data, size)
             if ev_dict is None:
                 return 0
@@ -702,7 +786,7 @@ def run_cli():
                 time.sleep(0.1)
             now = time.monotonic()
             if (now - last_wd) >= 1.0:
-                wd = engine.step_watchdog(now)
+                engine.step_watchdog(now)
                 last_wd = now
             if args.duration > 0 and (now - t_start) >= args.duration:
                 break

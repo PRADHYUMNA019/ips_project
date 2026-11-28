@@ -14,10 +14,11 @@ Repeats evaluation across three feature-set ablations:
   3. 'no_size_features': drops size_0..N-1, bytes_up, bytes_down, first_payload_size
 to test the hypothesis that IAT features degrade under jitter while packet-size features remain stable.
 """
+
 import os
 import sys
 import argparse
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
@@ -85,10 +86,7 @@ def apply_netem_impairment_to_matrix(
         if has_log_iat:
             sizes = [int(round(float(row.get(f"size_{i}", 0.0)) * 1500.0)) for i in range(vlen)]
             dirs = [int(round(float(row.get(f"dir_{i}", 0.0)))) for i in range(vlen)]
-            iats_ms = [
-                max(0.0, (10.0 ** (float(row.get(f"log_iat_{i}", 0.0)) * 7.0) - 1.0) / 1000.0)
-                for i in range(max(0, vlen - 1))
-            ]
+            iats_ms = [max(0.0, (10.0 ** (float(row.get(f"log_iat_{i}", 0.0)) * 7.0) - 1.0) / 1000.0) for i in range(max(0, vlen - 1))]
         else:
             sizes = [int(row[f"size_{i}"]) for i in range(vlen) if f"size_{i}" in row]
             dirs = [int(row.get(f"dir_{i}", 0)) for i in range(len(sizes))]
@@ -121,17 +119,13 @@ def run_impairment_study(
     early_n: int = 12,
     epochs: int = 12,
     seed: int = 42,
-    out_dir: str = None,
+    out_dir: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Train clean models under each feature ablation ('full_features', 'no_iat_features', 'no_size_features')
     and evaluate robustness across all netem impairment profiles (C11 / N11).
     """
-    is_smoke = (
-        is_smoke_dataframe(train_df)
-        or is_smoke_dataframe(calib_df)
-        or is_smoke_dataframe(test_df)
-    )
+    is_smoke = is_smoke_dataframe(train_df) or is_smoke_dataframe(calib_df) or is_smoke_dataframe(test_df)
     source_tag = "synthetic-smoke" if is_smoke else "real"
     if is_smoke:
         print(SMOKE_BANNER)
@@ -148,8 +142,8 @@ def run_impairment_study(
     X_tr_clean_full = recompute_early_matrix_for_k(benign_tr_df, early_n)
     X_cal_clean_full = recompute_early_matrix_for_k(benign_cal_df, early_n)
     y_test = test_df["is_attack"].to_numpy(dtype=int)
-    ben_test_mask = (y_test == 0)
-    atk_test_mask = (y_test == 1)
+    ben_test_mask = y_test == 0
+    atk_test_mask = y_test == 1
 
     n_tr = max(20, int(len(X_tr_clean_full) * 0.8))
     rows: List[Dict[str, Any]] = []
@@ -161,7 +155,12 @@ def run_impairment_study(
         X_cal_abl = X_cal_clean_full[:, fmask]
 
         model, _ = train_autoencoder(
-            X_tr_abl, X_val_abl, input_dim=X_tr_abl.shape[1], epochs=epochs, seed=seed
+            X_tr_abl,
+            X_val_abl,
+            input_dim=X_tr_abl.shape[1],
+            epochs=epochs,
+            seed=seed,
+            apply_flow_mask=(abl_mode == "full_features"),
         )
         cal_scores, _ = model.get_reconstruction_error(X_cal_abl)
         evt_01 = fit_evt_threshold(cal_scores, target_fpr=0.01)
@@ -174,10 +173,10 @@ def run_impairment_study(
             X_test_imp_full = apply_netem_impairment_to_matrix(
                 test_df,
                 early_n=early_n,
-                delay_ms=prof["delay_ms"],
-                jitter_ms=prof["jitter_ms"],
-                loss_pct=prof["loss_pct"],
-                reorder_pct=prof["reorder_pct"],
+                delay_ms=float(prof["delay_ms"]),  # type: ignore[arg-type]
+                jitter_ms=float(prof["jitter_ms"]),  # type: ignore[arg-type]
+                loss_pct=float(prof["loss_pct"]),  # type: ignore[arg-type]
+                reorder_pct=float(prof["reorder_pct"]),  # type: ignore[arg-type]
                 seed=seed + p_idx,
             )
             X_test_abl = X_test_imp_full[:, fmask]
@@ -195,23 +194,25 @@ def run_impairment_study(
             if prof["profile"] == "clean":
                 clean_fpr_01 = fpr_01
 
-            rows.append({
-                "ablation_mode": abl_mode,
-                "active_features": int(np.sum(fmask)),
-                "profile": prof["profile"],
-                "delay_ms": prof["delay_ms"],
-                "jitter_ms": prof["jitter_ms"],
-                "loss_pct": prof["loss_pct"],
-                "reorder_pct": prof["reorder_pct"],
-                "auroc": round(auroc, 4),
-                "tpr_at_fpr01": round(tpr_01, 4),
-                "tpr_at_fpr001": round(tpr_001, 4),
-                "achieved_fpr_01": round(fpr_01, 4),
-                "fpr_ci95_low": round(ci_01[0], 5),
-                "fpr_ci95_high": round(ci_01[1], 5),
-                "fpr_drift_from_clean": round(fpr_01 - (clean_fpr_01 or 0.0), 4),
-                "source": source_tag,
-            })
+            rows.append(
+                {
+                    "ablation_mode": abl_mode,
+                    "active_features": int(np.sum(fmask)),
+                    "profile": prof["profile"],
+                    "delay_ms": prof["delay_ms"],
+                    "jitter_ms": prof["jitter_ms"],
+                    "loss_pct": prof["loss_pct"],
+                    "reorder_pct": prof["reorder_pct"],
+                    "auroc": round(auroc, 4),
+                    "tpr_at_fpr01": round(tpr_01, 4),
+                    "tpr_at_fpr001": round(tpr_001, 4),
+                    "achieved_fpr_01": round(fpr_01, 4),
+                    "fpr_ci95_low": round(ci_01[0], 5),
+                    "fpr_ci95_high": round(ci_01[1], 5),
+                    "fpr_drift_from_clean": round(fpr_01 - (clean_fpr_01 or 0.0), 4),
+                    "source": source_tag,
+                }
+            )
 
     res_df = pd.DataFrame(rows)
     out_csv = os.path.join(out_dir, "netem_impairment.csv")
@@ -236,4 +237,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -19,8 +19,9 @@ shared identically between the offline training pipeline and online eBPF engine.
 #   IP addresses, MAC addresses, and Port numbers are strictly EXCLUDED
 #   to prevent artificial separation of classes by service port.
 """
+
 import math
-from typing import List, Dict, Any, Tuple
+from typing import List
 import numpy as np
 
 FEATURE_SCHEMA_VERSION = 2
@@ -28,24 +29,62 @@ LOG_IAT_SCALE = 7.0
 FEATURE_CLIP_MAX = 1.5
 
 FORBIDDEN_COLUMNS = {
-    "src_ip", "dst_ip", "src_port", "dst_port", "sport", "dport",
-    "ip_src", "ip_dst", "mac_src", "mac_dst", "ip_a", "ip_b", "port_a", "port_b",
-    "proto", "start_ts", "end_ts", "instance", "session_id", "source",
-    "label_family", "is_attack", "encrypted", "domain", "raw_valid_len",
-    "device_id", "device_class",
+    "src_ip",
+    "dst_ip",
+    "src_port",
+    "dst_port",
+    "sport",
+    "dport",
+    "ip_src",
+    "ip_dst",
+    "mac_src",
+    "mac_dst",
+    "ip_a",
+    "ip_b",
+    "port_a",
+    "port_b",
+    "proto",
+    "start_ts",
+    "end_ts",
+    "instance",
+    "session_id",
+    "source",
+    "label_family",
+    "is_attack",
+    "encrypted",
+    "domain",
+    "raw_valid_len",
+    "device_id",
+    "device_class",
 }
 
 METADATA_COLUMNS = [
-    "src_ip", "dst_ip", "sport", "dport", "proto",
-    "start_ts", "end_ts", "instance",
-    "session_id", "source", "label_family", "is_attack",
-    "encrypted", "domain",
+    "src_ip",
+    "dst_ip",
+    "sport",
+    "dport",
+    "proto",
+    "start_ts",
+    "end_ts",
+    "instance",
+    "session_id",
+    "source",
+    "label_family",
+    "is_attack",
+    "encrypted",
+    "domain",
 ]
 
 FEATURE_NAMES_BASE = [
-    "bytes_up", "bytes_down", "pkts_up", "pkts_down",
-    "frac_upstream", "mean_log_iat", "std_log_iat",
-    "first_payload_size", "valid_len"
+    "bytes_up",
+    "bytes_down",
+    "pkts_up",
+    "pkts_down",
+    "frac_upstream",
+    "mean_log_iat",
+    "std_log_iat",
+    "first_payload_size",
+    "valid_len",
 ]
 
 
@@ -62,8 +101,7 @@ def get_feature_names(early_n: int = 12) -> List[str]:
     return cols
 
 
-def build_early_vector(sizes: List[int], dirs: List[int], iat_ms_list: List[float],
-                       early_n: int = 12) -> np.ndarray:
+def build_early_vector(sizes: List[int], dirs: List[int], iat_ms_list: List[float], early_n: int = 12) -> np.ndarray:
     """Build a fixed-dimension normalized feature vector for a flow.
 
     Args:
@@ -120,17 +158,20 @@ def build_early_vector(sizes: List[int], dirs: List[int], iat_ms_list: List[floa
     first_payload_size = (min(1500.0, float(sizes[0])) / 1500.0) if valid_len > 0 else 0.0
     norm_valid_len = float(valid_len) / float(early_n)
 
-    aggregates = np.array([
-        min(1.5, bytes_up / 15000.0),
-        min(1.5, bytes_down / 15000.0),
-        pkts_up / float(early_n),
-        pkts_down / float(early_n),
-        frac_upstream,
-        min(1.5, mean_log_iat / 7.0),  # normalized by log10(10^7 us = 10s), clipped at 1.5
-        min(1.5, std_log_iat / 3.0),
-        first_payload_size,
-        norm_valid_len,
-    ], dtype=np.float32)
+    aggregates = np.array(
+        [
+            min(1.5, bytes_up / 15000.0),
+            min(1.5, bytes_down / 15000.0),
+            pkts_up / float(early_n),
+            pkts_down / float(early_n),
+            frac_upstream,
+            min(1.5, mean_log_iat / 7.0),  # normalized by log10(10^7 us = 10s), clipped at 1.5
+            min(1.5, std_log_iat / 3.0),
+            first_payload_size,
+            norm_valid_len,
+        ],
+        dtype=np.float32,
+    )
 
     vec = np.concatenate([norm_sizes, norm_dirs, log_iats, aggregates])
     return vec
@@ -181,10 +222,7 @@ def recompute_early_matrix_for_k(df, k: int) -> np.ndarray:
         if has_log_iat:
             sizes = [int(round(float(row.get(f"size_{i}", 0.0)) * 1500.0)) for i in range(vlen)]
             dirs = [int(round(float(row.get(f"dir_{i}", 0.0)))) for i in range(vlen)]
-            iats_ms = [
-                max(0.0, (10.0 ** (float(row.get(f"log_iat_{i}", 0.0)) * 7.0) - 1.0) / 1000.0)
-                for i in range(max(0, vlen - 1))
-            ]
+            iats_ms = [max(0.0, (10.0 ** (float(row.get(f"log_iat_{i}", 0.0)) * 7.0) - 1.0) / 1000.0) for i in range(max(0, vlen - 1))]
         else:
             sizes = [int(row[f"size_{i}"]) for i in range(vlen) if f"size_{i}" in row]
             dirs = [int(row.get(f"dir_{i}", 0)) for i in range(len(sizes))]
@@ -194,30 +232,44 @@ def recompute_early_matrix_for_k(df, k: int) -> np.ndarray:
     return np.array(rows, dtype=np.float32) if rows else np.zeros((0, 3 * k + 8), dtype=np.float32)
 
 
-def build_valid_mask_matrix(x: np.ndarray) -> np.ndarray:
+def build_valid_mask_matrix(x: np.ndarray, expected_early_n: int | None = None) -> np.ndarray:
     """
     Build a binary feature mask (1.0 for active features < valid_len, 0.0 for padded features >= valid_len)
-    for a 1D (3N+8,) or 2D (B, 3N+8) early-flow feature array (Prompt 6 §7 / C1).
+    for a 1D (3N+8,) or 2D (B, 3N+8) early-flow feature array (Prompt 6 §7 / C1 / BUG-01).
+
+    Raises ValueError if feature dimension is not 3*N + 8 (N >= 1) or if normalized valid_len
+    in the final column is NaN or outside [0.0, 1.0001] (no silent all-ones fallback).
     """
     arr = np.asarray(x, dtype=np.float32)
     is_1d = arr.ndim == 1
     if is_1d:
         arr = arr.reshape(1, -1)
+    if arr.ndim != 2:
+        raise ValueError(f"Expected 1D or 2D feature array, got shape {arr.shape}")
 
     b, d = arr.shape
     if (d - 8) <= 0 or (d - 8) % 3 != 0:
-        return np.ones_like(x, dtype=np.float32)
+        raise ValueError(f"Feature dimension d={d} does not match canonical 3*N + 8 early-flow schema; cannot infer valid_len mask.")
 
     early_n = (d - 8) // 3
+    if expected_early_n is not None and early_n != int(expected_early_n):
+        raise ValueError(f"Feature dimension d={d} implies early_n={early_n}, expected early_n={expected_early_n}.")
+
+    if b == 0:
+        empty = np.ones((0, d), dtype=np.float32)
+        return empty[0] if is_1d else empty
+
     norm_vlens = arr[:, -1]
-    # If last column is not a valid normalized length ratio in (0, 1], return all-ones mask
-    if np.any(norm_vlens <= 0.0) or np.any(norm_vlens > 1.0001):
-        return np.ones_like(x, dtype=np.float32)
+    if not np.all(np.isfinite(norm_vlens)) or np.any(norm_vlens < -1e-6) or np.any(norm_vlens > 1.0001):
+        raise ValueError(
+            f"Invalid normalized valid_len in last column (expected in [0.0, 1.0], got min={np.nanmin(norm_vlens):.4f}, "
+            f"max={np.nanmax(norm_vlens):.4f})."
+        )
 
     mask = np.ones((b, d), dtype=np.float32)
     for idx in range(b):
         vlen = int(round(float(norm_vlens[idx]) * early_n))
-        vlen = max(1, min(early_n, vlen))
+        vlen = max(0, min(early_n, vlen))
         if vlen < early_n:
             # Mask out padded sizes: vlen .. early_n - 1
             mask[idx, vlen:early_n] = 0.0
@@ -228,7 +280,3 @@ def build_valid_mask_matrix(x: np.ndarray) -> np.ndarray:
             mask[idx, 2 * early_n + valid_iats : 3 * early_n - 1] = 0.0
 
     return mask[0] if is_1d else mask
-
-
-
-

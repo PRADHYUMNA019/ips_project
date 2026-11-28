@@ -4,9 +4,9 @@ This guide walks you through verifying the entire codebase and generating all re
 
 ---
 
-## 1. VM Setup (Ubuntu 22.04 / 24.04 LTS, Kernel >= 5.15)
+## 1. VM Setup (Ubuntu 22.04 / 24.04 LTS, Kernel >= 5.15, No WSL2)
 
-Allocate at least **2 vCPUs, 4 GB RAM, and 25 GB disk** to your Ubuntu VM.
+Allocate at least **4 vCPUs, 6 GB RAM, and 100 GB disk** to your Ubuntu VM (VirtualBox / VMware / KVM; no WSL2, as WSL2 is unsupported for XDP).
 
 ### 1.1 Install System & Kernel Dependencies
 ```bash
@@ -83,7 +83,7 @@ sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" bash scripts/collect.sh --session benign_
 sudo env "PATH=$VIRTUAL_ENV/bin:$PATH" bash scripts/run_experiment.sh configs/experiments/demo_scenario.yaml
 ```
 
-### Step 3.4: Extract Canonical Early-Flow Features (`N=12`) from Pcaps
+### Step 3.4: Extract Canonical Early-Flow Features (`early_n=16`, checkpoints `[4, 8, 16]`) from Pcaps
 ```bash
 make features
 ```
@@ -92,7 +92,8 @@ make features
 ```bash
 python3 ips/models/train.py \
     --data results/raw/benign_s1_flows.csv \
-    --out-dir models \
+    --model-dir models \
+    --early-n 16 \
     --epochs 30
 ```
 
@@ -133,7 +134,7 @@ bash datasets/download_cesnet.sh
 
 # 3. IoT-23 Benign Captures ONLY (CTU-Honeypot-Capture-4-1 Hue, 5-1 Echo, 7-1 Somfy)
 bash datasets/download_iot23.sh
-python3 -m ips.eval.cross_domain --early-n 16 --out results/offline/cross_domain_iot23.csv
+python3 -m ips.eval.cross_domain --early-n 16 --out-dir results/offline
 ```
 
 ### Step 3.11: Compile `docs/RESULTS.md` (`make reproduce`)

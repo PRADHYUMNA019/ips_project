@@ -11,6 +11,7 @@ loop. Phase 4 replaces it with the INT8 autoencoder + EVT threshold.
 
 Run:  sudo python3 engine/ringbuf_engine.py     (Ctrl-C to stop)
 """
+
 import os
 import ctypes
 import socket
@@ -21,6 +22,7 @@ from bcc import BPF
 
 try:
     import yaml
+
     _cfg_path = os.path.join(os.path.dirname(__file__), "..", "configs", "system.yaml")
     with open(_cfg_path, "r") as _f:
         _cfg = yaml.safe_load(_f) or {}
@@ -231,6 +233,7 @@ int xdp_engine(struct xdp_md *ctx)
 }
 """
 
+
 class IPSEvent(ctypes.Structure):
     _fields_ = [
         ("src_ip", ctypes.c_uint32),
@@ -250,8 +253,10 @@ class IPSEvent(ctypes.Structure):
         ("iats_ns", ctypes.c_uint64 * (EARLY_N - 1)),
     ]
 
+
 def ip_str(v):
     return socket.inet_ntoa(struct.pack("=I", v))
+
 
 def main():
     bpf = BPF(text=XDP_SRC)
@@ -260,19 +265,19 @@ def main():
         try:
             bpf.attach_xdp(IFACE, fn)
         except Exception:
-            bpf.attach_xdp(IFACE, fn, flags=2)   # generic/SKB mode fallback
+            bpf.attach_xdp(IFACE, fn, flags=2)  # generic/SKB mode fallback
     except Exception as e:
         print(f"\033[91m[engine ERROR] Failed to attach XDP to '{IFACE}'.\033[0m")
-        print(f"               Ensure network topology is up: 'sudo ./scripts/topology.sh create'")
+        print("               Ensure network topology is up: 'sudo ./scripts/topology.sh create'")
         print(f"               Details: {e}")
         return
 
-    print("\033[1;32m" + "="*84)
+    print("\033[1;32m" + "=" * 84)
     print(f"  [TWO-TIER INLINE IPS ENGINE] Online & Attached to '{IFACE}'")
-    print(f"  Architecture  : eBPF/XDP Fast-Path <---> User-Space Feature Engine (RingBuffer)")
+    print("  Architecture  : eBPF/XDP Fast-Path <---> User-Space Feature Engine (RingBuffer)")
     print(f"  Early-N Window: First {EARLY_N} packets per flow")
     print(f"  Anomaly Rule  : Auto-Quarantine if mean IAT < {AUTO_BLOCK_MEAN_IAT_MS} ms")
-    print("="*84 + "\033[0m\n")
+    print("=" * 84 + "\033[0m\n")
 
     events = bpf["events"]
     drop_map = bpf["drop_map"]
@@ -283,50 +288,56 @@ def main():
         proto_str = "TCP" if e.proto == 6 else ("UDP" if e.proto == 17 else f"P({e.proto})")
         src_str = f"{ip_str(e.src_ip)}:{socket.ntohs(e.src_port)}"
         dst_str = f"{ip_str(e.dst_ip)}:{socket.ntohs(e.dst_port)}"
-        ts = time.strftime('%H:%M:%S')
+        ts = time.strftime("%H:%M:%S")
 
         if e.event_type == 1:
             # Per-packet early flow trace
             stats["tracked"] += 1
             dir_str = "OUT" if e.dir == 1 else "IN "
             iat_ms = e.iat_ns / 1e6
-            print(f"\033[90m[{ts}]\033[0m \033[33m[FLOW TRACK #{e.pkt_index:2d}/{EARLY_N}]\033[0m "
-                  f"{src_str:<21} -> {dst_str:<21} [{proto_str:<3}] "
-                  f"len={e.pkt_len:<4}B dir={dir_str} iat={iat_ms:6.2f}ms")
+            print(
+                f"\033[90m[{ts}]\033[0m \033[33m[FLOW TRACK #{e.pkt_index:2d}/{EARLY_N}]\033[0m "
+                f"{src_str:<21} -> {dst_str:<21} [{proto_str:<3}] "
+                f"len={e.pkt_len:<4}B dir={dir_str} iat={iat_ms:6.2f}ms"
+            )
 
         elif e.event_type == 2:
             # 12-packet early-flow feature completion
             stats["evaluated"] += 1
             mean_iat_ms = sum(e.iats_ns) / (EARLY_N - 1) / 1e6
-            is_anomaly = (e.proto == 6 and mean_iat_ms < AUTO_BLOCK_MEAN_IAT_MS)
+            is_anomaly = e.proto == 6 and mean_iat_ms < AUTO_BLOCK_MEAN_IAT_MS
             sizes_list = list(e.sizes)
             dirs_list = ["OUT" if d == 1 else "IN" for d in e.dirs]
             iats_ms_list = [round(x / 1e6, 2) for x in e.iats_ns]
 
-            print("\n" + "\033[1;36m" + "="*84)
+            print("\n" + "\033[1;36m" + "=" * 84)
             print(f" >>> [IPS VERDICT ENGINE] 12-PACKET EARLY-FLOW SIGNATURE CAPTURED (Flow #{stats['evaluated']}) <<<")
-            print("="*84 + "\033[0m")
+            print("=" * 84 + "\033[0m")
             print(f"  \033[1mFlow 5-Tuple   :\033[0m {src_str} -> {dst_str} [{proto_str}]")
             print(f"  \033[1mPacket Sizes(B):\033[0m {sizes_list}")
             print(f"  \033[1mDirections     :\033[0m {dirs_list}")
             print(f"  \033[1mIAT Vector (ms):\033[0m {iats_ms_list}")
-            print(f"  \033[1mMean IAT       :\033[0m \033[1;33m{mean_iat_ms:.2f} ms\033[0m  (Anomaly Threshold: < {AUTO_BLOCK_MEAN_IAT_MS:.1f} ms)")
+            print(
+                f"  \033[1mMean IAT       :\033[0m \033[1;33m{mean_iat_ms:.2f} ms\033[0m  (Anomaly Threshold: < {AUTO_BLOCK_MEAN_IAT_MS:.1f} ms)"
+            )
 
             if is_anomaly:
                 drop_map[ctypes.c_uint(e.src_ip)] = ctypes.c_ubyte(1)
-                print(f"  \033[1;41;37m VERDICT: MALICIOUS (PERIODIC C2 BEACON ANOMALY DETECTED) \033[0m")
+                print("  \033[1;41;37m VERDICT: MALICIOUS (PERIODIC C2 BEACON ANOMALY DETECTED) \033[0m")
                 print(f"  \033[1;31m>>> INLINE ENFORCEMENT: Writing {ip_str(e.src_ip)} to eBPF drop_map (KERNEL DROP ACTIVE) <<<\033[0m")
             else:
-                print(f"  \033[1;42;30m VERDICT: BENIGN (NORMAL IoT TRAFFIC DYNAMICS) \033[0m")
-                print(f"  \033[32m>>> FAST-PATH CACHE: Allowing flow without user-space penalty <<<\033[0m")
-            print("\033[1;36m" + "="*84 + "\033[0m\n")
+                print("  \033[1;42;30m VERDICT: BENIGN (NORMAL IoT TRAFFIC DYNAMICS) \033[0m")
+                print("  \033[32m>>> FAST-PATH CACHE: Allowing flow without user-space penalty <<<\033[0m")
+            print("\033[1;36m" + "=" * 84 + "\033[0m\n")
 
         elif e.event_type == 3:
             # Dropped packet intercepted in XDP
             stats["dropped"] += 1
-            print(f"\033[90m[{ts}]\033[0m \033[1;31m[KERNEL XDP_DROP #{stats['dropped']:<4d}]\033[0m "
-                  f"INTERCEPTED & REJECTED: {src_str:<21} -> {dst_str:<21} [{proto_str}] len={e.pkt_len:<4}B "
-                  f"\033[31m[REASON: IP in drop_map]\033[0m")
+            print(
+                f"\033[90m[{ts}]\033[0m \033[1;31m[KERNEL XDP_DROP #{stats['dropped']:<4d}]\033[0m "
+                f"INTERCEPTED & REJECTED: {src_str:<21} -> {dst_str:<21} [{proto_str}] len={e.pkt_len:<4}B "
+                f"\033[31m[REASON: IP in drop_map]\033[0m"
+            )
 
     events.open_ring_buffer(on_event)
     try:
@@ -339,7 +350,9 @@ def main():
             bpf.remove_xdp(IFACE)
         except Exception:
             bpf.remove_xdp(IFACE, flags=2)
-    print(f"[engine] Detached cleanly. Summary: {stats['tracked']} pkts tracked, {stats['evaluated']} flows evaluated, {stats['dropped']} packets dropped in kernel.")
+    print(
+        f"[engine] Detached cleanly. Summary: {stats['tracked']} pkts tracked, {stats['evaluated']} flows evaluated, {stats['dropped']} packets dropped in kernel."
+    )
 
 
 if __name__ == "__main__":

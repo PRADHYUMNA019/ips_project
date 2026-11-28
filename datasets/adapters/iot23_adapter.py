@@ -9,6 +9,7 @@ CRITICAL GUARD (A3):
       * CTU-Honeypot-Capture-7-1 (Somfy Door Lock)
   - CTU-IoT-Malware-Capture-7-1 is MALICIOUS (Linux.Mirai) and must NEVER be labelled benign!
 """
+
 import os
 import sys
 from typing import Dict, Any
@@ -76,7 +77,9 @@ def adapt_iot23_record(
     return out
 
 
-def adapt_iot23_pcap(pcap_path: str, capture_name: str, early_n: int = 12, is_attack: int = 0, label_family: str = "benign") -> pd.DataFrame:
+def adapt_iot23_pcap(
+    pcap_path: str, capture_name: str, early_n: int = 12, is_attack: int = 0, label_family: str = "benign"
+) -> pd.DataFrame:
     """Extract canonical early-flow features from an IoT-23 capture pcap."""
     validate_iot23_capture_label(capture_name, is_attack)
     return extract_flows_from_pcap(
@@ -89,4 +92,3 @@ def adapt_iot23_pcap(pcap_path: str, capture_name: str, early_n: int = 12, is_at
         is_attack=is_attack,
         domain="iot23",
     )
-

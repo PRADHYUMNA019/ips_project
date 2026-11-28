@@ -18,17 +18,22 @@ Guard Pipeline (G1 -> G2 -> G3 -> G4 + Bounded Step + Rollback):
   - Bounded Step: threshold changes by at most factor gamma per accepted update
   - Safe Swap & Rollback: atomic threshold update with rollback if post-update FPR spikes
 """
+
 import math
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Set
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Set
 import numpy as np
 
+ADWIN: Any = None
+PageHinkley: Any = None
 try:
-    from river.drift import ADWIN, PageHinkley
+    from river.drift import ADWIN as _ADWIN, PageHinkley as _PageHinkley
+
+    ADWIN = _ADWIN
+    PageHinkley = _PageHinkley
 except ImportError:
-    ADWIN = None
-    PageHinkley = None
+    pass
 
 from ips.models.evt import fit_evt_threshold as calibrate_threshold_evt
 from ips.drift.periodicity import analyze_periodicity
@@ -37,13 +42,13 @@ from ips.drift.periodicity import analyze_periodicity
 @dataclass
 class GuardConfig:
     target_fpr: float = 0.01
-    min_persistence_windows: int = 2       # G1: k consecutive windows
-    consistency_rho: float = 0.60          # G2: fraction of class devices showing shift
-    min_class_size_for_g2: int = 3         # G2 requires >= 3 devices in class
-    periodicity_cv_thresh: float = 0.30    # G3: CV below this is flagged as periodic
-    eps_anchor_fpr: float = 0.02           # G4: max allowed FPR increase on anchor benign set
-    eps_canary_tpr: float = 0.08           # G4: max allowed TPR drop on canary DEV attack set
-    max_step_gamma: float = 1.30           # Bounded step factor gamma per update
+    min_persistence_windows: int = 2  # G1: k consecutive windows
+    consistency_rho: float = 0.60  # G2: fraction of class devices showing shift
+    min_class_size_for_g2: int = 3  # G2 requires >= 3 devices in class
+    periodicity_cv_thresh: float = 0.30  # G3: CV below this is flagged as periodic
+    eps_anchor_fpr: float = 0.02  # G4: max allowed FPR increase on anchor benign set
+    eps_canary_tpr: float = 0.08  # G4: max allowed TPR drop on canary DEV attack set
+    max_step_gamma: float = 1.30  # Bounded step factor gamma per update
     rollback_alert_rate_max: float = 0.35  # Rollback trigger if post-update alert rate spikes
     enable_g1: bool = True
     enable_g2: bool = True

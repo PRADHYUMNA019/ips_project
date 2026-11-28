@@ -16,19 +16,20 @@ Reports:
 Usage:
   python ips/eval/equivalence.py --pcap capture.pcap --events events.jsonl --out results/equivalence/report.md
 """
+
 import os
 import sys
 import json
 import argparse
 from collections import defaultdict
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
 
 from ips.features import build_early_vector
-from ips.offline.pcap_to_flows import extract_flows_from_pcap, canonical_flow_key, _default_flow_idle_s
+from ips.offline.pcap_to_flows import canonical_flow_key, _default_flow_idle_s
 
 
 def load_kernel_events_jsonl(jsonl_path: str) -> List[Dict[str, Any]]:
@@ -46,7 +47,7 @@ def load_kernel_events_jsonl(jsonl_path: str) -> List[Dict[str, Any]]:
 
 
 def extract_raw_pcap_flows(
-    pcap_path: str, early_n: int = 12, lan_prefix: str = "10.0.1.", flow_idle_s: float = None
+    pcap_path: str, early_n: int = 12, lan_prefix: str = "10.0.1.", flow_idle_s: Optional[float] = None
 ) -> List[Dict[str, Any]]:
     """
     Parse a pcap using the exact same rules as pcap_to_flows.py / ebpf/ips_engine.c, returning raw
@@ -56,8 +57,8 @@ def extract_raw_pcap_flows(
     import socket
 
     idle_limit_s = _default_flow_idle_s() if flow_idle_s is None else float(flow_idle_s)
-    active = {}
-    completed = []
+    active: Dict[Tuple[str, int, str, int, str], Dict[str, Any]] = {}
+    completed: List[Dict[str, Any]] = []
 
     with open(pcap_path, "rb") as f:
         try:
@@ -133,7 +134,7 @@ def extract_raw_pcap_flows(
             except Exception:
                 continue
 
-    for ckey, flow in active.items():
+    for _ckey, flow in active.items():
         if len(flow["sizes"]) > 0:
             completed.append(flow)
 
@@ -167,9 +168,9 @@ def compare_flows(
     matched_pairs = 0
     size_exact_matches = 0
     dir_exact_matches = 0
-    iat_diffs_us = []
-    vec_max_diffs = []
-    per_ckpt_stats = defaultdict(lambda: {"matched": 0, "size_ok": 0, "dir_ok": 0, "iat_diffs_us": []})
+    iat_diffs_us: List[float] = []
+    vec_max_diffs: List[float] = []
+    per_ckpt_stats: Dict[int, Dict[str, Any]] = defaultdict(lambda: {"matched": 0, "size_ok": 0, "dir_ok": 0, "iat_diffs_us": []})
 
     for ckey, k_list in kern_by_key.items():
         p_list = pcap_by_key.get(ckey, [])
@@ -252,10 +253,7 @@ def compare_flows(
         "feature_vec_max_abs_diff": float(np.max(vec_max_diffs)) if vec_max_diffs else 0.0,
         "per_checkpoint": per_checkpoint_summary,
         "passed": (
-            matched_pairs > 0
-            and size_match_rate == 1.0
-            and dir_match_rate == 1.0
-            and iat_p99 <= 1000.0  # within 1 ms (1000 us) p99
+            matched_pairs > 0 and size_match_rate == 1.0 and dir_match_rate == 1.0 and iat_p99 <= 1000.0  # within 1 ms (1000 us) p99
         ),
     }
 
@@ -276,8 +274,8 @@ def write_equivalence_report(metrics: Dict[str, Any], out_md_path: str):
         "",
         "| Metric | Value | Target |",
         "|--------|-------|--------|",
-        f"| `sizes[0..N-1]` Exact Match Rate | {metrics['size_exact_match_rate']*100:.2f}% | 100.00% |",
-        f"| `dirs[0..N-1]` Exact Match Rate | {metrics['dir_exact_match_rate']*100:.2f}% | 100.00% |",
+        f"| `sizes[0..N-1]` Exact Match Rate | {metrics['size_exact_match_rate'] * 100:.2f}% | 100.00% |",
+        f"| `dirs[0..N-1]` Exact Match Rate | {metrics['dir_exact_match_rate'] * 100:.2f}% | 100.00% |",
         f"| `|IAT_kernel - IAT_pcap|` p50 | {metrics['iat_diff_p50_us']:.2f} us | < 200 us |",
         f"| `|IAT_kernel - IAT_pcap|` p95 | {metrics['iat_diff_p95_us']:.2f} us | < 500 us |",
         f"| `|IAT_kernel - IAT_pcap|` p99 | {metrics['iat_diff_p99_us']:.2f} us | < 1000 us |",

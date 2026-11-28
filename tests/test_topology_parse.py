@@ -2,6 +2,7 @@
 """
 tests/test_topology_parse.py — Verify topology device parsing against configs/devices.yaml.
 """
+
 import os
 import shutil
 import subprocess
@@ -92,9 +93,5 @@ def test_topology_sh_source_syntax_and_trimming():
         content = f.read()
 
     # Must contain exact leading whitespace trimming parameter expansion
-    assert 'local trimmed="${line#"' in content, (
-        "scripts/topology.sh must trim leading whitespace to parse YAML device lines (M12 killed)"
-    )
-    assert 'local trimmed="$line"' not in content, (
-        "scripts/topology.sh contains untrimmed line bug (M12 detected)"
-    )
+    assert 'local trimmed="${line#"' in content, "scripts/topology.sh must trim leading whitespace to parse YAML device lines (M12 killed)"
+    assert 'local trimmed="$line"' not in content, "scripts/topology.sh contains untrimmed line bug (M12 detected)"

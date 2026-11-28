@@ -2,6 +2,7 @@
 """
 tests/test_schema_and_equivalence.py — V1 unit tests for WP6 (schema.py, ebpf/ips_engine.c, equivalence.py).
 """
+
 import os
 import json
 import socket
@@ -11,9 +12,6 @@ import dpkt
 
 from ips.engine.schema import (
     SCHEMA_VERSION,
-    VERDICT_BYPASS,
-    VERDICT_DROP,
-    load_system_config,
     generate_c_header,
     make_ctypes_schemas,
     make_flow_key,
@@ -162,9 +160,7 @@ def test_40_packet_flow_exact_3_checkpoints_no_event_storm_1c():
     # Part 1: Normal 40-packet flow -> must emit at pkt 4, 8, 16 ONLY (total 3 events)
     emitted_normal = []
     for pkt_num in range(1, 41):
-        _, ev = backend.simulate_packet(
-            "10.0.1.14", 51001, "10.0.2.10", 8443, "TCP", 120, pkt_num % 2, t0 + pkt_num * 10_000_000
-        )
+        _, ev = backend.simulate_packet("10.0.1.14", 51001, "10.0.2.10", 8443, "TCP", 120, pkt_num % 2, t0 + pkt_num * 10_000_000)
         if ev is not None:
             emitted_normal.append((pkt_num, ev["checkpoint_idx"], ev["valid_len"]))
 
@@ -177,15 +173,15 @@ def test_40_packet_flow_exact_3_checkpoints_no_event_storm_1c():
     emitted_delayed = []
     for pkt_num in range(1, 41):
         backend.simulate_ringbuf_full = (4 <= pkt_num <= 6) or (16 <= pkt_num <= 19)
-        _, ev = backend.simulate_packet(
-            "10.0.1.15", 51002, "10.0.2.10", 8443, "TCP", 120, pkt_num % 2, t0 + pkt_num * 10_000_000
-        )
+        _, ev = backend.simulate_packet("10.0.1.15", 51002, "10.0.2.10", 8443, "TCP", 120, pkt_num % 2, t0 + pkt_num * 10_000_000)
         if ev is not None:
             emitted_delayed.append((pkt_num, ev["checkpoint_idx"], ev["valid_len"]))
 
     assert len(emitted_delayed) == 3, f"Expected 3 events after delayed recovery, got {len(emitted_delayed)}: {emitted_delayed}"
     assert [x[1] for x in emitted_delayed] == [0, 1, 2], "All 3 checkpoints must be emitted in order without loss or duplication"
-    assert [x[0] for x in emitted_delayed] == [7, 8, 20], f"Expected delayed emission at pkts [7, 8, 20], got {[x[0] for x in emitted_delayed]}"
+    assert [x[0] for x in emitted_delayed] == [7, 8, 20], (
+        f"Expected delayed emission at pkts [7, 8, 20], got {[x[0] for x in emitted_delayed]}"
+    )
     assert backend.stats["events_emitted"] == 6
     assert backend.stats["ckpt_retry"] == 7  # 3 retries for ckpt 0 (pkts 4,5,6) + 4 retries for ckpt 2 (pkts 16,17,18,19)
 
@@ -319,7 +315,17 @@ def test_ebpf_c_sources_present_and_valid():
 
     with open(v2_path, "r", encoding="utf-8") as f:
         src = f.read()
-    for token in ("verdict_map", "flow_state", "tier0_map", "cfg_map", "stats_map", "BPF_RINGBUF_OUTPUT", "xdp_ips_prog", "emitted_mask", "checkpoint_idx"):
+    for token in (
+        "verdict_map",
+        "flow_state",
+        "tier0_map",
+        "cfg_map",
+        "stats_map",
+        "BPF_RINGBUF_OUTPUT",
+        "xdp_ips_prog",
+        "emitted_mask",
+        "checkpoint_idx",
+    ):
         assert token in src
 
 
@@ -331,37 +337,79 @@ def test_multi_checkpoint_equivalence():
 
     # Flow 1: reaches all 3 checkpoints (4, 8, 16)
     pf_full = {
-        "ip_a": "10.0.1.11", "port_a": 50001, "ip_b": "10.0.2.10", "port_b": 8443, "proto": "TCP",
-        "sizes": sizes_16, "dirs": dirs_16, "iat_ns": iats_15, "valid_len": 16,
+        "ip_a": "10.0.1.11",
+        "port_a": 50001,
+        "ip_b": "10.0.2.10",
+        "port_b": 8443,
+        "proto": "TCP",
+        "sizes": sizes_16,
+        "dirs": dirs_16,
+        "iat_ns": iats_15,
+        "valid_len": 16,
     }
     # Flow 2: short flow of 6 packets, only reaches checkpoint 4
     pf_short = {
-        "ip_a": "10.0.1.21", "port_a": 50002, "ip_b": "10.0.2.10", "port_b": 8883, "proto": "TCP",
-        "sizes": sizes_16[:6], "dirs": dirs_16[:6], "iat_ns": iats_15[:5], "valid_len": 6,
+        "ip_a": "10.0.1.21",
+        "port_a": 50002,
+        "ip_b": "10.0.2.10",
+        "port_b": 8883,
+        "proto": "TCP",
+        "sizes": sizes_16[:6],
+        "dirs": dirs_16[:6],
+        "iat_ns": iats_15[:5],
+        "valid_len": 6,
     }
 
     kernel_events = [
         # Flow 1 checkpoints: 4, 8, 16
         {
-            "ip_a": "10.0.1.11", "port_a": 50001, "ip_b": "10.0.2.10", "port_b": 8443, "proto": "TCP",
-            "valid_len": 4, "checkpoint_idx": 0,
-            "sizes": sizes_16[:4], "dirs": dirs_16[:4], "iat_ns": iats_15[:3],
+            "ip_a": "10.0.1.11",
+            "port_a": 50001,
+            "ip_b": "10.0.2.10",
+            "port_b": 8443,
+            "proto": "TCP",
+            "valid_len": 4,
+            "checkpoint_idx": 0,
+            "sizes": sizes_16[:4],
+            "dirs": dirs_16[:4],
+            "iat_ns": iats_15[:3],
         },
         {
-            "ip_a": "10.0.1.11", "port_a": 50001, "ip_b": "10.0.2.10", "port_b": 8443, "proto": "TCP",
-            "valid_len": 8, "checkpoint_idx": 1,
-            "sizes": sizes_16[:8], "dirs": dirs_16[:8], "iat_ns": iats_15[:7],
+            "ip_a": "10.0.1.11",
+            "port_a": 50001,
+            "ip_b": "10.0.2.10",
+            "port_b": 8443,
+            "proto": "TCP",
+            "valid_len": 8,
+            "checkpoint_idx": 1,
+            "sizes": sizes_16[:8],
+            "dirs": dirs_16[:8],
+            "iat_ns": iats_15[:7],
         },
         {
-            "ip_a": "10.0.1.11", "port_a": 50001, "ip_b": "10.0.2.10", "port_b": 8443, "proto": "TCP",
-            "valid_len": 16, "checkpoint_idx": 2,
-            "sizes": sizes_16[:16], "dirs": dirs_16[:16], "iat_ns": iats_15[:15],
+            "ip_a": "10.0.1.11",
+            "port_a": 50001,
+            "ip_b": "10.0.2.10",
+            "port_b": 8443,
+            "proto": "TCP",
+            "valid_len": 16,
+            "checkpoint_idx": 2,
+            "sizes": sizes_16[:16],
+            "dirs": dirs_16[:16],
+            "iat_ns": iats_15[:15],
         },
         # Flow 2 checkpoint: 4 only (short flow ends at 6)
         {
-            "ip_a": "10.0.1.21", "port_a": 50002, "ip_b": "10.0.2.10", "port_b": 8883, "proto": "TCP",
-            "valid_len": 4, "checkpoint_idx": 0,
-            "sizes": sizes_16[:4], "dirs": dirs_16[:4], "iat_ns": iats_15[:3],
+            "ip_a": "10.0.1.21",
+            "port_a": 50002,
+            "ip_b": "10.0.2.10",
+            "port_b": 8883,
+            "proto": "TCP",
+            "valid_len": 4,
+            "checkpoint_idx": 0,
+            "sizes": sizes_16[:4],
+            "dirs": dirs_16[:4],
+            "iat_ns": iats_15[:3],
         },
     ]
 
@@ -394,31 +442,62 @@ def test_ctypes_struct_field_offsets_and_python314_layout():
 
     # Exact byte-for-byte ABI match against ebpf/ips_engine.c __attribute__((packed)) structs
     assert ctypes.sizeof(FlowKey) == 16
-    assert (FlowKey.ip_a.offset, FlowKey.ip_b.offset, FlowKey.port_a.offset, FlowKey.port_b.offset, FlowKey.proto.offset, FlowKey.pad.offset) == (0, 4, 8, 10, 12, 13)
+    assert (
+        FlowKey.ip_a.offset,
+        FlowKey.ip_b.offset,
+        FlowKey.port_a.offset,
+        FlowKey.port_b.offset,
+        FlowKey.proto.offset,
+        FlowKey.pad.offset,
+    ) == (0, 4, 8, 10, 12, 13)
 
     assert ctypes.sizeof(VerdictEntry) == 16
     assert (VerdictEntry.action.offset, VerdictEntry.pad.offset, VerdictEntry.expiry_ns.offset) == (0, 1, 8)
 
     assert ctypes.sizeof(CfgEntry) == 16
     assert (
-        CfgEntry.lan_ifindex.offset, CfgEntry.shed.offset, CfgEntry.debug.offset,
-        CfgEntry.tier0_enabled.offset, CfgEntry.pad.offset, CfgEntry.tier0_rate.offset, CfgEntry.tier0_capacity.offset,
+        CfgEntry.lan_ifindex.offset,
+        CfgEntry.shed.offset,
+        CfgEntry.debug.offset,
+        CfgEntry.tier0_enabled.offset,
+        CfgEntry.pad.offset,
+        CfgEntry.tier0_rate.offset,
+        CfgEntry.tier0_capacity.offset,
     ) == (0, 4, 5, 6, 7, 8, 12)
 
     assert ctypes.sizeof(StatsEntry) == 72
     assert (
-        StatsEntry.pkts_seen.offset, StatsEntry.pkts_bypassed.offset, StatsEntry.pkts_dropped_verdict.offset,
-        StatsEntry.pkts_dropped_tier0.offset, StatsEntry.events_emitted.offset, StatsEntry.ringbuf_drop_failures.offset,
-        StatsEntry.flow_insert_failures.offset, StatsEntry.ckpt_retry.offset, StatsEntry.ckpt_skipped_shed.offset,
+        StatsEntry.pkts_seen.offset,
+        StatsEntry.pkts_bypassed.offset,
+        StatsEntry.pkts_dropped_verdict.offset,
+        StatsEntry.pkts_dropped_tier0.offset,
+        StatsEntry.events_emitted.offset,
+        StatsEntry.ringbuf_drop_failures.offset,
+        StatsEntry.flow_insert_failures.offset,
+        StatsEntry.ckpt_retry.offset,
+        StatsEntry.ckpt_skipped_shed.offset,
     ) == (0, 8, 16, 24, 32, 40, 48, 56, 64)
 
     assert ctypes.sizeof(ev_cls) == 224
     assert (
-        ev_cls.schema_version.offset, ev_cls.proto.offset, ev_cls.valid_len.offset,
-        ev_cls.flags_seen.offset, ev_cls.checkpoint_idx.offset, ev_cls.ip_a.offset, ev_cls.ip_b.offset,
-        ev_cls.port_a.offset, ev_cls.port_b.offset, ev_cls.initiator_ip.offset, ev_cls.initiator_port.offset,
-        ev_cls.pad2.offset, ev_cls.total_pkts.offset, ev_cls.total_bytes.offset, ev_cls.pad3.offset,
-        ev_cls.first_ts_ns.offset, ev_cls.last_ts_ns.offset, ev_cls.iat_ns.offset, ev_cls.sizes.offset, ev_cls.dirs.offset,
+        ev_cls.schema_version.offset,
+        ev_cls.proto.offset,
+        ev_cls.valid_len.offset,
+        ev_cls.flags_seen.offset,
+        ev_cls.checkpoint_idx.offset,
+        ev_cls.ip_a.offset,
+        ev_cls.ip_b.offset,
+        ev_cls.port_a.offset,
+        ev_cls.port_b.offset,
+        ev_cls.initiator_ip.offset,
+        ev_cls.initiator_port.offset,
+        ev_cls.pad2.offset,
+        ev_cls.total_pkts.offset,
+        ev_cls.total_bytes.offset,
+        ev_cls.pad3.offset,
+        ev_cls.first_ts_ns.offset,
+        ev_cls.last_ts_ns.offset,
+        ev_cls.iat_ns.offset,
+        ev_cls.sizes.offset,
+        ev_cls.dirs.offset,
     ) == (0, 4, 5, 6, 7, 8, 12, 16, 18, 20, 24, 26, 28, 32, 36, 40, 48, 56, 176, 208)
-
-

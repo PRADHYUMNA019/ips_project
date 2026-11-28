@@ -16,12 +16,13 @@ Outputs `results/splits/splits.json` and updates the split summary table in `doc
 Usage:
   python -m ips.data.build_splits --check
 """
+
 import os
 import sys
 import json
 import warnings
 import argparse
-from typing import Dict, Any, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 import pandas as pd
 
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -41,8 +42,6 @@ def verify_split_integrity(
     """
     Assert all 4 split integrity rules (B2a-d). Raises ValueError on any leakage violation.
     """
-    benign_split_names = [k for k in ("train", "calibration", "validation", "test_benign") if k in splits]
-
     # (a) Assert no session_id appears in two splits
     session_map: Dict[str, Set[str]] = {}
     for s_name, df in splits.items():
@@ -59,9 +58,7 @@ def verify_split_integrity(
             # never allow any overlap across train, calibration, validation, test!
             overlap = session_map[k1].intersection(session_map[k2])
             if overlap:
-                raise ValueError(
-                    f"CRITICAL SPLIT LEAKAGE (B2a): session_id(s) {overlap} appear in both '{k1}' and '{k2}'!"
-                )
+                raise ValueError(f"CRITICAL SPLIT LEAKAGE (B2a): session_id(s) {overlap} appear in both '{k1}' and '{k2}'!")
 
     # (b) Assert held-out families are absent from train, calibration, and validation;
     #     and train/calibration are 100% benign (is_attack == 0)
@@ -80,9 +77,7 @@ def verify_split_integrity(
                     fams = set(df_c[col].astype(str).unique())
                     bad = fams.intersection(held_set)
                     if bad:
-                        raise ValueError(
-                            f"CRITICAL ZERO-DAY LEAKAGE (B2b): held-out family {bad} found in '{check_name}'!"
-                        )
+                        raise ValueError(f"CRITICAL ZERO-DAY LEAKAGE (B2b): held-out family {bad} found in '{check_name}'!")
 
     # (c) Calibration sample count warning
     cal_df = splits.get("calibration", pd.DataFrame())
@@ -101,7 +96,7 @@ def verify_split_integrity(
         if b_name in splits and len(splits[b_name]) > 0:
             df_b = splits[b_name]
             if "in_attack_window" in df_b.columns:
-                ben_in_atk = df_b[(df_b.get("is_attack", 0) == 0) & (df_b["in_attack_window"] == True)]
+                ben_in_atk = df_b[(df_b.get("is_attack", 0) == 0) & (df_b["in_attack_window"].astype(bool))]
                 if len(ben_in_atk) > 0:
                     raise ValueError(
                         f"CRITICAL CONTAMINATION (B2d): {len(ben_in_atk)} benign flows from an active attack window "
@@ -126,11 +121,13 @@ def build_lofo_folds(attack_families: Tuple[str, ...] = ALL_ATTACK_FAMILIES) -> 
     folds = []
     for fam in attack_families:
         dev_fams = [f for f in attack_families if f != fam]
-        folds.append({
-            "fold_id": f"lofo_{fam}",
-            "held_out_family": fam,
-            "dev_families": dev_fams,
-        })
+        folds.append(
+            {
+                "fold_id": f"lofo_{fam}",
+                "held_out_family": fam,
+                "dev_families": dev_fams,
+            }
+        )
     return folds
 
 
@@ -147,7 +144,7 @@ def build_splits_from_sessions(
     for role, df in session_dfs.items():
         df_copy = df.copy()
         if role in ("train", "calibration") and "in_attack_window" in df_copy.columns:
-            df_copy = df_copy[df_copy["in_attack_window"] == False].copy()
+            df_copy = df_copy[~df_copy["in_attack_window"].astype(bool)].copy()
         splits[role] = df_copy
 
     report = verify_split_integrity(
@@ -159,7 +156,7 @@ def build_splits_from_sessions(
     return splits, report
 
 
-def update_spec_md_split_table(report: Dict[str, Any], spec_path: str = None, is_smoke: bool = False):
+def update_spec_md_split_table(report: Dict[str, Any], spec_path: Optional[str] = None, is_smoke: bool = False):
     """
     Write or update the session-split summary table inside docs/spec.md (B2).
     Per Rule B0, smoke-data counts are written to results/smoke/split_table.md
@@ -233,7 +230,7 @@ def run_check_cli(min_calibration_flows: int = 3000):
     df_val = df_val_raw[~df_val_raw["label_family"].isin(DEFAULT_HELD_OUT_FAMILIES)].copy()
     df_test = generate_smoke_dataset(n_benign=300, n_attack=150, early_n=16, session_id="smoke_s4_test", seed=104)
 
-    splits, report = build_splits_from_sessions(
+    _splits, report = build_splits_from_sessions(
         {
             "train": df_train,
             "calibration": df_cal,

@@ -2,6 +2,7 @@
 """
 tests/test_drift_guard.py — V1 unit tests for WP8 (periodicity.py, guard.py, scenarios.py).
 """
+
 import os
 import numpy as np
 import pytest
@@ -10,7 +11,6 @@ from ips.drift.periodicity import analyze_periodicity, SlowC2Tracker
 from ips.drift.guard import PoisoningAwareDriftGuard, GuardConfig
 from ips.drift.scenarios import (
     _make_anchor_and_canary,
-    run_method_on_scenario,
     run_all_drift_scenarios,
 )
 
@@ -152,6 +152,4 @@ def test_cost_of_evasion_and_cesnet_drift_c3_b5(tmp_path):
 
     ces_df = evaluate_cesnet_natural_drift(out_dir=str(tmp_path), is_smoke=True)
     assert len(ces_df) == 24  # 8 weeks * 3 methods
-    assert (ces_df["g2_applicable"] == False).all()
-
-
+    assert (~ces_df["g2_applicable"].astype(bool)).all()

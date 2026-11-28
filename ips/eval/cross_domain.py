@@ -19,10 +19,11 @@ CTU-Honeypot-Capture-5-1 Amazon Echo, CTU-Honeypot-Capture-7-1 Somfy Door Lock):
 Rule B0: When run without real IoT-23 pcap extracts (--smoke), writes ONLY to results/smoke/
 and prints "SMOKE DATA – NOT A RESULT".
 """
+
 import os
 import sys
 import argparse
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -60,9 +61,7 @@ def evaluate_cross_domain_pair(
     for split_name, split_arr in (("source_train", x_source_train), ("source_cal", x_source_cal)):
         for r in split_arr:
             if np.asarray(r, dtype=np.float32).tobytes() in target_hashes:
-                raise ValueError(
-                    f"CRITICAL CROSS-DOMAIN LEAKAGE: target domain row found in {split_name}!"
-                )
+                raise ValueError(f"CRITICAL CROSS-DOMAIN LEAKAGE: target domain row found in {split_name}!")
 
     # Fit scaler statistics strictly on source TRAIN alone
     if fit_hook is not None:
@@ -138,12 +137,12 @@ def _build_smoke_iot23_benign(early_n: int = 12, n_per_device: int = 80, seed: i
     rows = []
     specs = [
         ("CTU-Honeypot-Capture-4-1", 115, 220.0),  # Philips Hue
-        ("CTU-Honeypot-Capture-5-1", 260, 85.0),   # Amazon Echo
-        ("CTU-Honeypot-Capture-7-1", 75, 450.0),   # Somfy Door Lock
+        ("CTU-Honeypot-Capture-5-1", 260, 85.0),  # Amazon Echo
+        ("CTU-Honeypot-Capture-7-1", 75, 450.0),  # Somfy Door Lock
     ]
     for cap_name, sz_mean, iat_mean in specs:
         for _ in range(n_per_device):
-            raw = {}
+            raw: Dict[str, Any] = {}
             for i in range(early_n):
                 raw[f"size_{i}"] = max(20, int(rng.normal(sz_mean, 25)))
                 raw[f"dir_{i}"] = 0 if (i % 2 == 0) else 1
@@ -172,8 +171,12 @@ def run_cross_domain_experiment(out_dir: str, early_n: int = 12, is_smoke: bool 
     # 1. Forward: Train on Testbed -> Evaluate on IoT-23 (overall and per device)
     rows.append(
         evaluate_cross_domain_pair(
-            x_tb_train, x_tb_cal, x_tb_test, x_iot_all,
-            early_n=early_n, direction_name="Testbed -> IoT-23 (All 3 Benign Devices)",
+            x_tb_train,
+            x_tb_cal,
+            x_tb_test,
+            x_iot_all,
+            early_n=early_n,
+            direction_name="Testbed -> IoT-23 (All 3 Benign Devices)",
         )
     )
     for cap in ("CTU-Honeypot-Capture-4-1", "CTU-Honeypot-Capture-5-1", "CTU-Honeypot-Capture-7-1"):
@@ -181,8 +184,12 @@ def run_cross_domain_experiment(out_dir: str, early_n: int = 12, is_smoke: bool 
         x_sub = recompute_early_matrix_for_k(sub_df, early_n)
         rows.append(
             evaluate_cross_domain_pair(
-                x_tb_train, x_tb_cal, x_tb_test, x_sub,
-                early_n=early_n, direction_name=f"Testbed -> IoT-23 ({cap})",
+                x_tb_train,
+                x_tb_cal,
+                x_tb_test,
+                x_sub,
+                early_n=early_n,
+                direction_name=f"Testbed -> IoT-23 ({cap})",
             )
         )
 
@@ -194,8 +201,12 @@ def run_cross_domain_experiment(out_dir: str, early_n: int = 12, is_smoke: bool 
     x_iot_te = x_iot_all[idx[int(0.75 * n_iot) :]]
     rows.append(
         evaluate_cross_domain_pair(
-            x_iot_tr, x_iot_ca, x_iot_te, x_tb_test,
-            early_n=early_n, direction_name="IoT-23 -> Testbed (Reverse)",
+            x_iot_tr,
+            x_iot_ca,
+            x_iot_te,
+            x_tb_test,
+            early_n=early_n,
+            direction_name="IoT-23 -> Testbed (Reverse)",
         )
     )
 

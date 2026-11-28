@@ -20,11 +20,13 @@ comparing:
   (2) Progressive checkpoints ([4, 8, 16])
   (3) Progressive checkpoints + Tier-2 SlowC2Tracker + PoisoningAwareDriftGuard
 """
+
+import argparse
+import logging
+import math
 import os
 import sys
-import math
-import argparse
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
@@ -32,8 +34,9 @@ REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, REPO_DIR)
 
 from ips.features import build_early_vector
-from ips.drift.periodicity import SlowC2Tracker
 from ips.smoke.synth import SMOKE_BANNER
+
+logger = logging.getLogger(__name__)
 
 
 def _benign_reference_vector(early_n: int) -> np.ndarray:
@@ -64,7 +67,7 @@ def evaluate_defense_stack(
     c2_jitter_frac: float = 0.0,
     reconnect_mode: bool = False,
     tau_single_12: float = 0.045,
-    tau_ckpts: Dict[int, float] = None,
+    tau_ckpts: Optional[Dict[int, float]] = None,
 ) -> Dict[str, Any]:
     """
     Evaluate a candidate attack parameterization against the three defense tiers:
@@ -124,8 +127,8 @@ def optimize_exfil_evasion_for_floor(
     subject to goodput >= min_goodput_kbps KB/s.
     """
     rng = np.random.default_rng(seed)
-    best_params = None
-    best_eval = None
+    best_params: Optional[Tuple[int, int, bool, int, float]] = None
+    best_eval: Optional[Dict[str, Any]] = None
     best_obj = float("inf")
 
     n_random = max(20, int(budget_q * 0.6))
@@ -154,6 +157,7 @@ def optimize_exfil_evasion_for_floor(
             best_params = (c_sz, p_b, m_ack, eff_sz, iat_ms)
             best_eval = res
 
+    assert best_params is not None and best_eval is not None
     # Phase 2: Hill-climbing perturbations around current best (40% of query budget Q)
     for _ in range(n_hill):
         c_sz = int(np.clip(best_params[0] + int(rng.integers(-80, 81)), 48, 1460))
@@ -187,8 +191,8 @@ def optimize_c2_evasion_for_floor(
     to evade detection while maintaining C2 command latency <= max_beacon_interval_s.
     """
     rng = np.random.default_rng(seed)
-    best_params = None
-    best_eval = None
+    best_params: Optional[Tuple[float, float, int, bool]] = None
+    best_eval: Optional[Dict[str, Any]] = None
     best_obj = float("inf")
 
     n_random = max(20, int(budget_q * 0.6))
@@ -202,7 +206,9 @@ def optimize_c2_evasion_for_floor(
         dirs = [0 if i % 2 == 0 else 1 for i in range(16)]
         iats = [max(5.0, interval_s * 1000.0 * (1.0 + float(rng.uniform(-jitter_f, jitter_f)))) for _ in range(15)]
         res = evaluate_defense_stack(
-            sizes, dirs, iats,
+            sizes,
+            dirs,
+            iats,
             c2_interval_s=interval_s,
             c2_jitter_frac=jitter_f,
             reconnect_mode=reconn,
@@ -221,6 +227,7 @@ def optimize_c2_evasion_for_floor(
             best_params = (iv, jf, msz, rec)
             best_eval = res
 
+    assert best_params is not None and best_eval is not None
     for _ in range(n_hill):
         iv = float(np.clip(best_params[0] * float(rng.uniform(0.85, 1.15)), 0.05, max_beacon_interval_s))
         jf = float(np.clip(best_params[1] + float(rng.uniform(-0.08, 0.08)), 0.0, 0.50))
@@ -254,17 +261,19 @@ def generate_adaptive_boiling_frog_sequence(n_steps: int = 12, seed: int = 42) -
     goodput_floors = np.linspace(0.5, 45.0, n_steps)
     for idx, g_floor in enumerate(goodput_floors):
         res = optimize_exfil_evasion_for_floor(float(g_floor), budget_q=60, seed=seed + idx)
-        steps.append({
-            "step": idx,
-            "target_goodput_kbps": round(float(g_floor), 2),
-            "score": round(float(res["score_n12"]), 5),
-            "iat_ms": float(res["best_iat_ms"]),
-        })
+        steps.append(
+            {
+                "step": idx,
+                "target_goodput_kbps": round(float(g_floor), 2),
+                "score": round(float(res["score_n12"]), 5),
+                "iat_ms": float(res["best_iat_ms"]),
+            }
+        )
     return steps
 
 
 def run_cost_of_evasion_experiment(
-    out_dir: str = None,
+    out_dir: Optional[str] = None,
     budget_q: int = 200,
     is_smoke: bool = True,
     seed: int = 42,
@@ -305,6 +314,7 @@ def run_cost_of_evasion_experiment(
     # Plot Cost-of-Evasion Curve
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -335,8 +345,8 @@ def run_cost_of_evasion_experiment(
         fig.tight_layout()
         fig.savefig(os.path.join(fig_dir, "evasion_cost_curve.png"), dpi=140)
         plt.close(fig)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to render evasion_cost_curve.png: %s", exc)
 
     print(f"[+] Wrote C3 cost-of-evasion curve to {csv_path} (source={source_tag})")
     return df

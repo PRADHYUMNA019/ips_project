@@ -5,6 +5,7 @@ traffic/attacks/a2_slowloris.py — A2: Slow-rate DoS over TLS.
 Opens multiple TLS connections and slowly sends individual bytes every 5-15 seconds
 to tie up server connection limits without triggering high-throughput alarms.
 """
+
 import ssl
 import socket
 import time
@@ -18,8 +19,9 @@ sys.path.insert(0, REPO_DIR)
 from traffic.manifest import ManifestWriter
 
 
-def run_a2_slowloris(target_ip="10.0.2.10", target_port=8883, conns=15, duration_s=30.0,
-                     manifest_path="results/manifest.csv", run_id="run_exp"):
+def run_a2_slowloris(
+    target_ip="10.0.2.10", target_port=8883, conns=15, duration_s=30.0, manifest_path="results/manifest.csv", run_id="run_exp"
+):
     print(f"[A2 SLOW-RATE DoS] Opening {conns} slow TLS streams against {target_ip}:{target_port} for {duration_s}s")
     writer = ManifestWriter(manifest_path, run_id=run_id)
     start_ts = time.time()
@@ -88,4 +90,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_a2_slowloris(args.target, args.port, args.conns, args.duration, args.manifest, args.run_id)
-

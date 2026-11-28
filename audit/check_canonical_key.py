@@ -21,7 +21,7 @@ from typing import Tuple
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from ips.engine.schema import make_flow_key, u32_to_ip, ip_to_u32, flow_key_to_canonical_tuple
+from ips.engine.schema import make_flow_key, u32_to_ip, ip_to_u32
 from ips.offline.pcap_to_flows import canonical_flow_key as offline_canonical_key
 
 
@@ -113,14 +113,14 @@ def run_checks():
         # 4. Check if raw __be comparison would have diverged
         raw_be = raw_network_order_key(src_ip, sport, dst_ip, dport)
         # Check if raw_be chose a different side as side A
-        c_chose_src_as_a = (c_res[0] == ip_to_u32(src_ip) and c_res[1] == sport)
+        c_chose_src_as_a = c_res[0] == ip_to_u32(src_ip) and c_res[1] == sport
         saddr_le = struct.unpack("<I", socket.inet_aton(src_ip))[0]
-        raw_chose_src_as_a = (raw_be[0] == saddr_le and raw_be[1] == struct.unpack("<H", struct.pack("!H", sport))[0])
-        diverged = (c_chose_src_as_a != raw_chose_src_as_a)
+        raw_chose_src_as_a = raw_be[0] == saddr_le and raw_be[1] == struct.unpack("<H", struct.pack("!H", sport))[0]
+        diverged = c_chose_src_as_a != raw_chose_src_as_a
         if diverged:
             raw_be_discrepancies += 1
 
-        match = (c_summary == py_summary == off_summary)
+        match = c_summary == py_summary == off_summary
         if not match:
             mismatches += 1
 
@@ -138,9 +138,10 @@ def run_checks():
     else:
         print("SUCCESS: C, Python Engine, and Offline Extractor agree 100% on all test cases.")
         if raw_be_discrepancies > 0:
-            print(f"NOTE: Confirmed that bpf_ntohl() in C lines 254-255 is strictly required: without it, {raw_be_discrepancies} cases would diverge.")
+            print(
+                f"NOTE: Confirmed that bpf_ntohl() in C lines 254-255 is strictly required: without it, {raw_be_discrepancies} cases would diverge."
+            )
 
 
 if __name__ == "__main__":
     run_checks()
-

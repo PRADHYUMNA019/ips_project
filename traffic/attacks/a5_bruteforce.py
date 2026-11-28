@@ -5,6 +5,7 @@ traffic/attacks/a5_bruteforce.py — A5: Credential brute force against MQTT-ove
 Simulates password dictionary attacks / brute force attempts against an MQTT broker
 over TLS on port 8883 with rapid authentication failures and reconnections.
 """
+
 import ssl
 import socket
 import time
@@ -46,9 +47,9 @@ def build_mqtt_connect_packet(client_id: str, username: str, password: str) -> b
     return fixed_header + remaining
 
 
-def run_a5_bruteforce(target_ip="10.0.2.10", target_port=8883,
-                      attempts=30, duration_s=20.0,
-                      manifest_path="results/manifest.csv", run_id="run_exp"):
+def run_a5_bruteforce(
+    target_ip="10.0.2.10", target_port=8883, attempts=30, duration_s=20.0, manifest_path="results/manifest.csv", run_id="run_exp"
+):
     print(f"[A5 BRUTE FORCE] Attacking MQTT credentials on {target_ip}:{target_port} ({attempts} attempts)")
     writer = ManifestWriter(manifest_path, run_id=run_id)
     start_ts = time.time()
@@ -115,4 +116,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_a5_bruteforce(args.target, args.port, args.attempts, args.duration, args.manifest, args.run_id)
-

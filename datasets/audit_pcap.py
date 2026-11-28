@@ -12,14 +12,15 @@ Measures:
 Usage:
   python datasets/audit_pcap.py <file_or_dir> [--out docs/DATA_CARD.md]
 """
-import os
-import sys
+
+import argparse
+import datetime
 import glob
 import hashlib
-import datetime
+import os
 import socket
-import argparse
-from collections import defaultdict, Counter
+from collections import Counter, defaultdict
+from typing import Any, Dict, List, Optional
 
 # Ensure dpkt is available, fallback or error message
 try:
@@ -60,7 +61,7 @@ def is_plaintext_marker(payload: bytes, port: int) -> bool:
         return False
     if port in (80, 8080) and (payload.startswith(b"GET ") or payload.startswith(b"POST ") or payload.startswith(b"HTTP/")):
         return True
-    if port == 1883 and len(payload) >= 2 and payload[0] in (0x10, 0x20, 0x30): # MQTT packet types
+    if port == 1883 and len(payload) >= 2 and payload[0] in (0x10, 0x20, 0x30):  # MQTT packet types
         return True
     return False
 
@@ -74,8 +75,8 @@ def audit_single_pcap(filepath: str):
     fsize_mb = os.path.getsize(filepath) / (1024.0 * 1024.0)
 
     total_pkts = 0
-    flows = defaultdict(list)
-    ports = Counter()
+    flows: Dict[Any, List[Any]] = defaultdict(list)
+    ports: Counter[int] = Counter()
 
     with open(filepath, "rb") as f:
         try:
@@ -117,11 +118,11 @@ def audit_single_pcap(filepath: str):
     tls_flows = 0
     plaintext_flows = 0
 
-    for key, pkt_list in flows.items():
+    for _key, pkt_list in flows.items():
         # Check first non-empty payload packet in flow
         first_payload = b""
         dport = 0
-        for ts, p, dp in pkt_list:
+        for _ts, p, dp in pkt_list:
             if len(p) > 0:
                 first_payload = p
                 dport = dp
@@ -149,7 +150,7 @@ def audit_single_pcap(filepath: str):
     }
 
 
-def generate_markdown_report(results: list, output_path: str = None) -> str:
+def generate_markdown_report(results: list, output_path: Optional[str] = None) -> str:
     """Format audit results as a GitHub Flavored Markdown table."""
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     lines = [
@@ -170,13 +171,15 @@ def generate_markdown_report(results: list, output_path: str = None) -> str:
                 f"{r['plain_share_pct']}% | {r['top_ports']} |"
             )
 
-    lines.extend([
-        "",
-        "### Audit Rules & Verification Criteria",
-        "- **TLS Verification**: Confirms payload bytes `0x16 0x03 0x01..0x04` at start of first application packet.",
-        "- **Honesty Rule H3**: Datasets lacking verified TLS record headers are classified as `plaintext-attack` or `plaintext-benign`, never as 'encrypted attacks'.",
-        "- **Held-Out Criteria**: Datasets designated as zero-day evaluations are held strictly in held-out test splits.",
-    ])
+    lines.extend(
+        [
+            "",
+            "### Audit Rules & Verification Criteria",
+            "- **TLS Verification**: Confirms payload bytes `0x16 0x03 0x01..0x04` at start of first application packet.",
+            "- **Honesty Rule H3**: Datasets lacking verified TLS record headers are classified as `plaintext-attack` or `plaintext-benign`, never as 'encrypted attacks'.",
+            "- **Held-Out Criteria**: Datasets designated as zero-day evaluations are held strictly in held-out test splits.",
+        ]
+    )
     md = "\n".join(lines)
     if output_path:
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -207,11 +210,10 @@ def main():
         except Exception as e:
             print(f"  Error reading {f}: {e}")
 
-    md = generate_markdown_report(results, args.out)
+    generate_markdown_report(results, args.out)
     print(f"\nAudit complete. {len(results)} files processed.")
     print(f"Report written to: {args.out}")
 
 
 if __name__ == "__main__":
     main()
-

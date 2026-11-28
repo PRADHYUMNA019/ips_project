@@ -1,0 +1,7 @@
+# UTC: 2026-11-28T15:07:27Z | Commit: 5389414 | Branch: p10-complete
+demo\run_smoke_pipeline.py:29: unused import 'tempfile' (90% confidence)
+ips\drift\guard.py:23: unused import 'field' (90% confidence)
+ips\drift\scenarios.py:38: unused import 'generate_adaptive_boiling_frog_sequence' (90% confidence)
+ips\engine\engine.py:500: unused variable 'reason' (100% confidence)
+ips\engine\engine.py:681: unused variable 'ctx' (100% confidence)
+ips\smoke\synth.py:189: unused variable 'out_parquet' (100% confidence)

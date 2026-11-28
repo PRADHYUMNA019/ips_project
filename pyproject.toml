@@ -1,0 +1,55 @@
+[project]
+name = "ips-project"
+version = "0.2.0"
+description = "Drift-Resilient On-Device Inline Intrusion Prevention for Encrypted Traffic in Resource-Constrained Smart Systems Against Zero-Day Attacks"
+readme = "README.md"
+requires-python = ">=3.10,<3.15"
+license = { text = "MIT" }
+
+[tool.ruff]
+target-version = "py310"
+line-length = 140
+extend-exclude = [
+    ".venv",
+    "results",
+    "models",
+    "ebpf/stubs",
+]
+
+[tool.ruff.lint]
+# Core correctness, pyflakes, pycodestyle errors/warnings, bugbear, implicit-optional, security-critical checks
+select = [
+    "E",
+    "F",
+    "W",
+    "B",
+    "RUF013",
+    "S110",
+    "S310",
+]
+ignore = [
+    # E501: long lines in markdown/report tables, SQL/CLI help strings, and descriptive error messages
+    "E501",
+    # E402: sys.path.insert(0, REPO_DIR) and OMP_NUM_THREADS env setup intentionally precede local/torch imports in CLI entrypoints
+    "E402",
+    # B905: zip(..., strict=...) omitted for Python 3.10 readability where lengths are pre-validated by schema
+    "B905",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["B011", "S110"]
+# traffic/ testbed socket generators intentionally ignore socket.close()/recv() teardown errors during XDP drops
+"traffic/**/*.py" = ["S110"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+explicit_package_bases = true
+no_implicit_optional = true
+check_untyped_defs = false
+warn_unused_ignores = false
+exclude = [
+    "^results/",
+    "^models/",
+    "^\\.venv/",
+]

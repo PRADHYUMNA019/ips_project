@@ -5,6 +5,7 @@ traffic/attacks/a1_flood.py — A1: Volumetric TLS-handshake & SYN flood.
 Rapidly attempts TLS handshakes against the target port (e.g. 8883/443).
 Handles SYN flooding via socket backlog exhaustion.
 """
+
 import ssl
 import socket
 import time
@@ -17,8 +18,7 @@ sys.path.insert(0, REPO_DIR)
 from traffic.manifest import ManifestWriter
 
 
-def run_a1_flood(target_ip="10.0.2.10", target_port=8883, duration_s=10.0,
-                 manifest_path="results/manifest.csv", run_id="run_exp"):
+def run_a1_flood(target_ip="10.0.2.10", target_port=8883, duration_s=10.0, manifest_path="results/manifest.csv", run_id="run_exp"):
     print(f"[A1 FLOOD] Launching volumetric TLS handshake flood against {target_ip}:{target_port} for {duration_s}s")
     writer = ManifestWriter(manifest_path, run_id=run_id)
     start_ts = time.time()
@@ -64,4 +64,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_a1_flood(args.target, args.port, args.duration, args.manifest, args.run_id)
-

@@ -7,28 +7,36 @@ Implements:
   2. KitsuneStyleEnsemble: Ensemble of tiny autoencoders over feature groups
   3. Explainability: Top-k feature attribution for alerts
 """
-import os
-from typing import List, Tuple, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from ips.features import build_valid_mask_matrix
 
 # PyTorch will be imported dynamically when available or at module level
+torch: Any = None
+nn: Any = None
 try:
-    import torch
-    import torch.nn as nn
+    import torch as _torch
+    import torch.nn as _nn
+    torch = _torch
+    nn = _nn
 except ImportError:
-    torch = None
-    nn = None
+    pass
+
+_BaseModule: Any = nn.Module if nn is not None else object
 
 
-class EarlyFlowAutoencoder(nn.Module if nn else object):
+class EarlyFlowAutoencoder(_BaseModule):
     """Small symmetric Autoencoder: D -> 32 -> 16 -> 8 -> 16 -> 32 -> D."""
 
-    def __init__(self, input_dim: int = 44):
+    def __init__(self, input_dim: int = 44, apply_flow_mask: Optional[bool] = None):
         if nn is None:
             raise RuntimeError("PyTorch is required for EarlyFlowAutoencoder")
         super().__init__()
         self.input_dim = input_dim
+        if apply_flow_mask is None:
+            self.apply_flow_mask = bool((input_dim - 8) > 0 and (input_dim - 8) % 3 == 0)
+        else:
+            self.apply_flow_mask = bool(apply_flow_mask)
 
         # Encoder
         self.encoder = nn.Sequential(
@@ -65,7 +73,7 @@ class EarlyFlowAutoencoder(nn.Module if nn else object):
             feat_errors: 2D array of shape (batch_size, input_dim)
         """
         self.eval()
-        mask = build_valid_mask_matrix(x)
+        mask = build_valid_mask_matrix(x) if self.apply_flow_mask else np.ones_like(x, dtype=np.float32)
         x_masked = x.astype(np.float32) * mask
         with torch.no_grad():
             t_x = torch.from_numpy(x_masked)
@@ -76,7 +84,7 @@ class EarlyFlowAutoencoder(nn.Module if nn else object):
         return sample_mse, sq_err
 
 
-class TinyGroupAE(nn.Module if nn else object):
+class TinyGroupAE(_BaseModule):
     """Tiny sub-autoencoder for a specific feature group."""
 
     def __init__(self, in_dim: int):
@@ -150,7 +158,8 @@ class KitsuneStyleEnsemble:
     def score(self, x: np.ndarray) -> np.ndarray:
         """Compute aggregated ensemble reconstruction error."""
         g1, g2, g3, g4 = self.split_features(x)
-        self.ae1.eval(); self.ae2.eval(); self.ae3.eval(); self.ae4.eval()
+        for sub_ae in (self.ae1, self.ae2, self.ae3, self.ae4):
+            sub_ae.eval()
 
         with torch.no_grad():
             e1 = (torch.from_numpy(g1.astype(np.float32)) - self.ae1(torch.from_numpy(g1.astype(np.float32)))).pow(2).mean(dim=1).numpy()

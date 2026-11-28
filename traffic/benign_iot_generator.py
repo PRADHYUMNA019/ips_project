@@ -10,6 +10,7 @@ Modes:
   - Legacy raw-TLS echo mode (--legacy-echo):
       * Sends raw JSON frames over TLS socket for backward-compatible echo testing.
 """
+
 import ssl
 import socket
 import time
@@ -100,10 +101,8 @@ def load_devices(yaml_path=None):
         import yaml
     except ImportError:
         return [
-            {"device_id": "sensor-01", "profile": "temperature_sensor",
-             "ip": "10.0.1.11", "class": "sensor", "connection": "persistent"},
-            {"device_id": "plug-01", "profile": "smart_plug",
-             "ip": "10.0.1.21", "class": "plug", "connection": "persistent"},
+            {"device_id": "sensor-01", "profile": "temperature_sensor", "ip": "10.0.1.11", "class": "sensor", "connection": "persistent"},
+            {"device_id": "plug-01", "profile": "smart_plug", "ip": "10.0.1.21", "class": "plug", "connection": "persistent"},
         ]
     yaml_path = os.path.abspath(yaml_path)
     with open(yaml_path, "r", encoding="utf-8") as f:
@@ -120,12 +119,14 @@ def get_device_config(device_id, yaml_path=None):
 
 
 def _make_payload(device_id: str, profile_name: str, msg_count: int, size: int) -> bytes:
-    header = json.dumps({
-        "id": device_id,
-        "type": profile_name,
-        "ts": round(time.time(), 3),
-        "seq": msg_count,
-    }).encode("utf-8")
+    header = json.dumps(
+        {
+            "id": device_id,
+            "type": profile_name,
+            "ts": round(time.time(), 3),
+            "seq": msg_count,
+        }
+    ).encode("utf-8")
     if len(header) >= size:
         return header[:size]
     return header + (b"x" * (size - len(header)))
@@ -193,9 +194,7 @@ def run_iot_device(
                         msgs_in_conn += 1
 
                         wait = max(0.02, random.gauss(interval_mean, interval_std))
-                        logger.info(
-                            f"[{device_id:<12} | MQTT-TLS] Telemetry #{msg_count:03d} ({len(payload)}B) -> next in ~{wait:.2f}s"
-                        )
+                        logger.info(f"[{device_id:<12} | MQTT-TLS] Telemetry #{msg_count:03d} ({len(payload)}B) -> next in ~{wait:.2f}s")
                         if time.time() - start < duration_s:
                             time.sleep(wait)
                 finally:
@@ -229,9 +228,7 @@ def run_iot_device(
                         msgs_in_conn += 1
 
                         wait = max(0.02, random.gauss(interval_mean, interval_std))
-                        logger.info(
-                            f"[{device_id:<12} | HTTPS-POST] Frame #{msg_count:03d} ({len(body)}B) -> next in ~{wait:.2f}s"
-                        )
+                        logger.info(f"[{device_id:<12} | HTTPS-POST] Frame #{msg_count:03d} ({len(body)}B) -> next in ~{wait:.2f}s")
                         if time.time() - start < duration_s:
                             time.sleep(wait)
                 finally:

@@ -2,17 +2,15 @@
 """
 tests/test_models.py — Unit tests for ML models, EVT thresholding, and quantization.
 """
+
 import os
 import math
-import json
 import tempfile
 import pytest
 import numpy as np
 
 from ips.models.evt import (
     fit_evt_threshold,
-    compute_3sigma_threshold,
-    compute_empirical_threshold,
     clopper_pearson_ci,
 )
 from ips.models.autoencoder import (
@@ -80,11 +78,10 @@ def test_evt_known_answer_exponential_tail_b6():
     assert fitted_threshold == pytest.approx(analytical_quantile, rel=0.15)
 
 
-
 def test_autoencoder_forward_and_explainability():
     """Verify PyTorch Autoencoder forward pass, reconstruction error, and top-3 explanations."""
     try:
-        import torch
+        import torch  # noqa: F401
     except ImportError:
         pytest.skip("PyTorch not installed")
 
@@ -113,7 +110,7 @@ def test_autoencoder_forward_and_explainability():
 def test_kitsune_style_ensemble():
     """Verify Kitsune-style sub-network grouping and scoring."""
     try:
-        import torch
+        import torch  # noqa: F401
     except ImportError:
         pytest.skip("PyTorch not installed")
 
@@ -127,9 +124,9 @@ def test_kitsune_style_ensemble():
 def test_onnx_export_and_int8_quantization():
     """Verify ONNX export, dynamic INT8 quantization, and latency benchmark."""
     try:
-        import torch
-        import onnx
-        import onnxruntime as ort
+        import torch  # noqa: F401
+        import onnx  # noqa: F401
+        import onnxruntime as ort  # noqa: F401
     except ImportError:
         pytest.skip("torch, onnx, or onnxruntime missing")
 
@@ -170,13 +167,8 @@ def test_train_and_eval_pipeline_runs_only():
         model_dir = os.path.join(tmp_dir, "models")
         out_dir = os.path.join(tmp_dir, "smoke_out")
 
-        generate_smoke_dataset(
-            n_benign=200, n_attack=50, early_n=12,
-            session_id="test_smoke", out_csv=smoke_csv
-        )
-        card = train_pipeline(
-            data_path=smoke_csv, early_n=12, epochs=4, seed=42, model_dir=model_dir
-        )
+        generate_smoke_dataset(n_benign=200, n_attack=50, early_n=12, session_id="test_smoke", out_csv=smoke_csv)
+        card = train_pipeline(data_path=smoke_csv, early_n=12, epochs=4, seed=42, model_dir=model_dir)
         assert card["data_source"] == "synthetic-smoke"
         assert os.path.exists(card["onnx_int8_path"])
 
@@ -197,7 +189,7 @@ def test_train_and_eval_pipeline_runs_only():
 def test_autoencoder_separates_synthetic_clusters():
     """B5: Non-tautological test asserting autoencoder achieves AUROC >= 0.90 on separable synthetic clusters."""
     try:
-        import torch
+        import torch  # noqa: F401
     except ImportError:
         pytest.skip("PyTorch not installed")
     from scipy.stats import mannwhitneyu
@@ -266,20 +258,19 @@ def test_contamination_study_and_trimmed_loss(tmp_path):
     from ips.eval.contamination import run_contamination_study
 
     df_tr = generate_smoke_dataset(
-        n_benign=120, n_attack=40, early_n=8, session_id="smoke_c12_tr",
-        out_csv=str(tmp_path / "tr.csv"), seed=301
+        n_benign=120, n_attack=40, early_n=8, session_id="smoke_c12_tr", out_csv=str(tmp_path / "tr.csv"), seed=301
     )
     df_cal = generate_smoke_dataset(
-        n_benign=80, n_attack=0, early_n=8, session_id="smoke_c12_cal",
-        out_csv=str(tmp_path / "cal.csv"), seed=302
+        n_benign=80, n_attack=0, early_n=8, session_id="smoke_c12_cal", out_csv=str(tmp_path / "cal.csv"), seed=302
     )
     df_te = generate_smoke_dataset(
-        n_benign=80, n_attack=40, early_n=8, session_id="smoke_c12_te",
-        out_csv=str(tmp_path / "te.csv"), seed=303
+        n_benign=80, n_attack=40, early_n=8, session_id="smoke_c12_te", out_csv=str(tmp_path / "te.csv"), seed=303
     )
 
     res_df = run_contamination_study(
-        df_tr, df_cal, df_te,
+        df_tr,
+        df_cal,
+        df_te,
         early_n=8,
         contamination_rates=(0.0, 0.02, 0.05),
         trim_pct=0.05,
@@ -299,7 +290,7 @@ def test_short_flow_masked_padding_invariance_c1():
     and changing padded positions (>= valid_len) does NOT change the anomaly score.
     """
     try:
-        import torch
+        import torch  # noqa: F401
     except ImportError:
         pytest.skip("PyTorch not installed")
     from ips.features import build_early_vector
@@ -319,8 +310,8 @@ def test_short_flow_masked_padding_invariance_c1():
     )
     # Create a copy where all padded slots (size_4..11, dir_4..11, log_iat_3..10) are perturbed
     vec_perturbed_pad = vec_zero_padded.copy()
-    vec_perturbed_pad[4:early_n] = 0.99                  # perturb padded sizes
-    vec_perturbed_pad[early_n + 4 : 2 * early_n] = 1.0   # perturb padded dirs
+    vec_perturbed_pad[4:early_n] = 0.99  # perturb padded sizes
+    vec_perturbed_pad[early_n + 4 : 2 * early_n] = 1.0  # perturb padded dirs
     vec_perturbed_pad[2 * early_n + 3 : 3 * early_n - 1] = 6.5  # perturb padded log_iats
 
     x_batch = np.stack([vec_zero_padded, vec_perturbed_pad], axis=0)
@@ -412,8 +403,3 @@ def test_toy_gaussian_cluster_all_checkpoints_and_length_comparability_p9_1d(tmp
     assert abs(float(s_onnx[0]) - float(s_onnx[1])) < 0.01, (
         f"valid_len=4 and valid_len=16 with identical active errors diverged: {s_onnx[0]:.4f} vs {s_onnx[1]:.4f}"
     )
-
-
-
-
-

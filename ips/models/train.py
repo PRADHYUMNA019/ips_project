@@ -19,7 +19,7 @@ import json
 import hashlib
 import argparse
 import pickle
-from typing import Tuple, List, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
@@ -30,7 +30,6 @@ sys.path.insert(0, REPO_DIR)
 from ips.features import (
     FEATURE_SCHEMA_VERSION,
     get_feature_names,
-    build_early_vector,
     assert_no_forbidden_features,
     recompute_early_matrix_for_k,
     build_valid_mask_matrix,
@@ -40,13 +39,20 @@ from ips.models.evt import fit_evt_threshold, allocate_checkpoint_alpha_budget
 from ips.models.quantize import export_to_onnx, quantize_to_int8, compare_fp32_int8, score_masked_onnx
 from ips.smoke.synth import SMOKE_BANNER
 
+torch: Any = None
+optim: Any = None
+TensorDataset: Any = None
+DataLoader: Any = None
 try:
-    import torch
-    import torch.nn as nn
-    import torch.optim as optim
-    from torch.utils.data import TensorDataset, DataLoader
+    import torch as _torch
+    import torch.optim as _optim
+    from torch.utils.data import DataLoader as _DataLoader, TensorDataset as _TensorDataset
+    torch = _torch
+    optim = _optim
+    TensorDataset = _TensorDataset
+    DataLoader = _DataLoader
 except ImportError:
-    torch = None
+    pass
 
 
 def is_smoke_dataframe(df: pd.DataFrame, data_path: str = "") -> bool:
@@ -79,18 +85,18 @@ def extract_matrix_from_df(df: pd.DataFrame, early_n: int = 12) -> Tuple[np.ndar
 
 def train_autoencoder(X_train: np.ndarray, X_val: np.ndarray, input_dim: int,
                       epochs: int = 50, batch_size: int = 64, lr: float = 0.004,
-                      seed: int = 42):
+                      seed: int = 42, apply_flow_mask: Optional[bool] = None):
     """Train PyTorch Autoencoder with masked MSE loss over positions < valid_len (C1)."""
     if torch is None:
         raise RuntimeError("torch is required to train Autoencoder")
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    model = EarlyFlowAutoencoder(input_dim=input_dim)
+    model = EarlyFlowAutoencoder(input_dim=input_dim, apply_flow_mask=apply_flow_mask)
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
 
-    mask_tr = build_valid_mask_matrix(X_train)
-    mask_va = build_valid_mask_matrix(X_val)
+    mask_tr = build_valid_mask_matrix(X_train) if model.apply_flow_mask else np.ones_like(X_train, dtype=np.float32)
+    mask_va = build_valid_mask_matrix(X_val) if model.apply_flow_mask else np.ones_like(X_val, dtype=np.float32)
     x_tr_masked = (X_train.astype(np.float32) * mask_tr)
     x_va_masked = (X_val.astype(np.float32) * mask_va)
 
@@ -137,9 +143,9 @@ def train_autoencoder(X_train: np.ndarray, X_val: np.ndarray, input_dim: int,
     return model, best_loss
 
 
-def train_pipeline(data_path: str, calib_path: str = None, early_n: int = 16,
-                   checkpoints: List[int] = None,
-                   epochs: int = 20, seed: int = 42, model_dir: str = None) -> Dict[str, Any]:
+def train_pipeline(data_path: str, calib_path: Optional[str] = None, early_n: int = 16,
+                   checkpoints: Optional[List[int]] = None,
+                   epochs: int = 20, seed: int = 42, model_dir: Optional[str] = None) -> Dict[str, Any]:
     """Run full benign-only training, progressive checkpoint training (C1/N7), EVT calibration, and quantization."""
     if model_dir is None:
         model_dir = os.path.join(REPO_DIR, "models")
@@ -349,6 +355,13 @@ if __name__ == "__main__":
     parser.add_argument("--early-n", type=int, default=16, help="Payload packets per flow (max checkpoint)")
     parser.add_argument("--epochs", type=int, default=20, help="Training epochs")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--model-dir",
+        "--out-dir",
+        dest="model_dir",
+        default=None,
+        help="Output directory for trained models and model_card.json",
+    )
     args = parser.parse_args()
 
     if not os.path.exists(args.data):
@@ -364,4 +377,5 @@ if __name__ == "__main__":
         early_n=args.early_n,
         epochs=args.epochs,
         seed=args.seed,
+        model_dir=args.model_dir,
     )

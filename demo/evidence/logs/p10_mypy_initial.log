@@ -1,0 +1,7 @@
+# UTC: 2026-11-28T15:07:27Z | Commit: 5389414 | Branch: p10-complete
+datasets\adapters\iot23_adapter.py: error: Source file found twice under different module names: "adapters.iot23_adapter" and "datasets.adapters.iot23_adapter"
+datasets\adapters\iot23_adapter.py: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules for more info
+datasets\adapters\iot23_adapter.py: note: Common resolutions include:
+datasets\adapters\iot23_adapter.py: note:     a) adding `__init__.py` somewhere,
+datasets\adapters\iot23_adapter.py: note:     b) using `--explicit-package-bases` or adjusting `MYPYPATH`
+Found 1 error in 1 file (errors prevented further checking)

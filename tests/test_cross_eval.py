@@ -2,6 +2,7 @@
 """
 tests/test_cross_eval.py — Cross-domain evaluation leakage guards for IoT-23 Benign and TQH-C2 (B7).
 """
+
 import numpy as np
 import pytest
 import ips.eval.cross_domain as cd
@@ -38,9 +39,7 @@ def test_iot23_tqh_c2_cross_domain_train_eval_isolation(monkeypatch):
         if arr_f32.ndim == 2:
             for r in arr_f32:
                 if r.tobytes() in target_row_hashes:
-                    raise RuntimeError(
-                        f"TARGET DOMAIN LEAKAGE (IoT-23 / TQH-C2): target row reached '{stage_name}'!"
-                    )
+                    raise RuntimeError(f"TARGET DOMAIN LEAKAGE (IoT-23 / TQH-C2): target row reached '{stage_name}'!")
 
     # Wrap train_autoencoder and fit_evt_threshold in ips.eval.cross_domain with sentinel checks
     orig_train_ae = cd.train_autoencoder
@@ -56,9 +55,7 @@ def test_iot23_tqh_c2_cross_domain_train_eval_isolation(monkeypatch):
     def guarded_fit_evt(scores, *args, **kwargs):
         stages_checked.append("threshold_calibration")
         if len(scores) != cal_scores_expected_len:
-            raise RuntimeError(
-                f"TARGET DOMAIN LEAKAGE: calibration score count {len(scores)} != source cal {cal_scores_expected_len}"
-            )
+            raise RuntimeError(f"TARGET DOMAIN LEAKAGE: calibration score count {len(scores)} != source cal {cal_scores_expected_len}")
         return orig_fit_evt(scores, *args, **kwargs)
 
     monkeypatch.setattr(cd, "train_autoencoder", guarded_train_ae)

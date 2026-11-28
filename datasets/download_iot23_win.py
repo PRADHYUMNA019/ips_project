@@ -11,6 +11,7 @@ CRITICAL SAFETY GUARD (A3): NEVER downloads CTU-IoT-Malware-Capture-7-1 (Linux.M
 and NEVER downloads iot_23_datasets_small.tar.gz (Zeek logs only, no pcaps).
 Uses Windows curl.exe (Schannel TLS store) with -C - resume support.
 """
+
 import os
 import re
 import sys
@@ -49,7 +50,8 @@ def curl_download(url: str, dest: str):
     os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
     p = subprocess.run(
         ["curl.exe", "-fL", "-C", "-", "--retry", "3", "--max-time", "600", "-o", dest, url],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if p.returncode != 0:
         raise RuntimeError(f"Download failed (rc={p.returncode}) for {url}: {p.stderr.strip()[:200]}")
@@ -68,18 +70,18 @@ def main():
         url = f"{IOT23_BASE}/{cap}/"
         html = curl_get(url)
         links = re.findall(r'href="([^"]+)"', html)
-        pcaps = [l for l in links if ".pcap" in l.lower()]
+        pcaps = [lnk for lnk in links if ".pcap" in lnk.lower()]
         for fn in pcaps:
             u = fn if fn.startswith("http") else (url + fn)
             plan.append((cap, fn, u, curl_head_size(u)))
-        for sd in [l for l in links if l.endswith("/") and l.startswith("Somfy")]:
+        for sd in [lnk for lnk in links if lnk.endswith("/") and lnk.startswith("Somfy")]:
             shtml = curl_get(url + sd)
-            for fn in [l for l in re.findall(r'href="([^"]+)"', shtml) if ".pcap" in l.lower()]:
+            for fn in [lnk for lnk in re.findall(r'href="([^"]+)"', shtml) if ".pcap" in lnk.lower()]:
                 u = f"{url}{sd}{fn}"
                 plan.append((cap, f"{sd.rstrip('/')}_{fn}", u, curl_head_size(u)))
 
     total_bytes = sum(x[3] for x in plan)
-    print(f"[*] Planned IoT-23 benign downloads: {len(plan)} files, {total_bytes/1024/1024:.2f} MB total")
+    print(f"[*] Planned IoT-23 benign downloads: {len(plan)} files, {total_bytes / 1024 / 1024:.2f} MB total")
     if total_bytes > MAX_TOTAL_BYTES:
         print(f"[!] Total exceeds 3 GB cap ({total_bytes} > {MAX_TOTAL_BYTES}); aborting.")
         sys.exit(1)
@@ -87,16 +89,16 @@ def main():
     for cap, fn, u, sz in plan:
         dest = os.path.join(out_dir, cap, fn)
         if os.path.exists(dest) and sz > 0 and os.path.getsize(dest) == sz:
-            print(f"  [skip] {cap}/{fn} ({sz/1024/1024:.2f} MB)")
+            print(f"  [skip] {cap}/{fn} ({sz / 1024 / 1024:.2f} MB)")
         else:
-            print(f"  [get]  {cap}/{fn} ({sz/1024/1024:.2f} MB) ...", flush=True)
+            print(f"  [get]  {cap}/{fn} ({sz / 1024 / 1024:.2f} MB) ...", flush=True)
             curl_download(u, dest)
         if dest.endswith(".xz"):
             raw_pcap = dest[:-3]
             if not os.path.exists(raw_pcap):
                 with lzma.open(dest, "rb") as fin, open(raw_pcap, "wb") as fout:
                     shutil.copyfileobj(fin, fout, length=1024 * 1024)
-                print(f"  [xz]   Decompressed -> {raw_pcap} ({os.path.getsize(raw_pcap)/1024/1024:.2f} MB)")
+                print(f"  [xz]   Decompressed -> {raw_pcap} ({os.path.getsize(raw_pcap) / 1024 / 1024:.2f} MB)")
 
     print(f"[+] IoT-23 benign downloads complete in {out_dir}")
 

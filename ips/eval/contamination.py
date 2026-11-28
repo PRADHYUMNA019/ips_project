@@ -10,10 +10,11 @@ Compares:
   1. Standard MSE training (unmitigated)
   2. Trimmed-loss training (drops the highest-loss t% of samples in each training step)
 """
+
 import os
 import sys
 import argparse
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
@@ -27,13 +28,21 @@ from ips.models.evt import fit_evt_threshold, clopper_pearson_ci
 from ips.models.train import is_smoke_dataframe, train_autoencoder
 from ips.smoke.synth import SMOKE_BANNER, generate_smoke_dataset
 
+torch: Any = None
+optim: Any = None
+TensorDataset: Any = None
+DataLoader: Any = None
 try:
-    import torch
-    import torch.nn as nn
-    import torch.optim as optim
-    from torch.utils.data import TensorDataset, DataLoader
+    import torch as _torch
+    import torch.optim as _optim
+    from torch.utils.data import DataLoader as _DataLoader, TensorDataset as _TensorDataset
+
+    torch = _torch
+    optim = _optim
+    TensorDataset = _TensorDataset
+    DataLoader = _DataLoader
 except ImportError:
-    torch = None
+    pass
 
 HELD_OUT_FAMILIES = {"A3_c2", "A4_exfil"}
 DEV_FAMILIES = {"A1_flood", "A2_slowloris", "A5_bruteforce"}
@@ -113,17 +122,13 @@ def run_contamination_study(
     trim_pct: float = 0.05,
     epochs: int = 15,
     seed: int = 42,
-    out_dir: str = None,
+    out_dir: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Execute the C12 training-set contamination sweep and trimmed-loss mitigation study.
     Strictly enforces that contaminating flows come ONLY from DEV attack families.
     """
-    is_smoke = (
-        is_smoke_dataframe(train_df)
-        or is_smoke_dataframe(calib_df)
-        or is_smoke_dataframe(test_df)
-    )
+    is_smoke = is_smoke_dataframe(train_df) or is_smoke_dataframe(calib_df) or is_smoke_dataframe(test_df)
     source_tag = "synthetic-smoke" if is_smoke else "real"
     if is_smoke:
         print(SMOKE_BANNER)
@@ -137,14 +142,10 @@ def run_contamination_study(
     # Extract clean benign training pool and DEV-family attack pool
     benign_train_df = train_df[train_df["is_attack"] == 0].copy()
     fam_col = "attack_family" if "attack_family" in train_df.columns else "label_family"
-    dev_attack_pool_df = train_df[
-        (train_df["is_attack"] == 1) & (~train_df[fam_col].isin(HELD_OUT_FAMILIES))
-    ].copy()
+    dev_attack_pool_df = train_df[(train_df["is_attack"] == 1) & (~train_df[fam_col].isin(HELD_OUT_FAMILIES))].copy()
     if len(dev_attack_pool_df) == 0 and fam_col in test_df.columns:
         # If train_df was strictly benign, draw DEV-family contaminating pool from non-held-out attacks
-        dev_attack_pool_df = test_df[
-            (test_df["is_attack"] == 1) & (~test_df[fam_col].isin(HELD_OUT_FAMILIES))
-        ].copy()
+        dev_attack_pool_df = test_df[(test_df["is_attack"] == 1) & (~test_df[fam_col].isin(HELD_OUT_FAMILIES))].copy()
 
     # Assert zero held-out family contamination
     if fam_col in dev_attack_pool_df.columns:
@@ -168,7 +169,7 @@ def run_contamination_study(
     test_fam = test_df[fam_col].astype(str).to_numpy() if fam_col in test_df.columns else np.where(y_test == 1, "A3_c2", "benign")
 
     held_out_mask = np.isin(test_fam, list(HELD_OUT_FAMILIES)) | (y_test == 0)
-    benign_test_mask = (y_test == 0)
+    benign_test_mask = y_test == 0
     held_out_atk_mask = np.isin(test_fam, list(HELD_OUT_FAMILIES))
 
     rng = np.random.default_rng(seed)
@@ -184,17 +185,13 @@ def run_contamination_study(
             idx = rng.choice(len(X_dev_atk_pool), size=n_injected, replace=(n_injected > len(X_dev_atk_pool)))
             X_tr_mixed = np.vstack([X_benign_tr, X_dev_atk_pool[idx]])
 
-        for method_name, is_trimmed in [("standard_mse", False), (f"trimmed_{int(trim_pct*100)}pct", True)]:
+        for method_name, is_trimmed in [("standard_mse", False), (f"trimmed_{int(trim_pct * 100)}pct", True)]:
             if is_trimmed:
                 model, _ = train_autoencoder_trimmed(
-                    X_tr_mixed, X_benign_val, input_dim=input_dim,
-                    trim_pct=trim_pct, epochs=epochs, seed=seed
+                    X_tr_mixed, X_benign_val, input_dim=input_dim, trim_pct=trim_pct, epochs=epochs, seed=seed
                 )
             else:
-                model, _ = train_autoencoder(
-                    X_tr_mixed, X_benign_val, input_dim=input_dim,
-                    epochs=epochs, seed=seed
-                )
+                model, _ = train_autoencoder(X_tr_mixed, X_benign_val, input_dim=input_dim, epochs=epochs, seed=seed)
 
             calib_scores, _ = model.get_reconstruction_error(X_calib)
             evt_01 = fit_evt_threshold(calib_scores, target_fpr=0.01)
@@ -222,24 +219,26 @@ def run_contamination_study(
             if c_rate == 0.0 and not is_trimmed:
                 baseline_clean_tpr = tpr_ho_01
 
-            rows.append({
-                "contamination_rate": c_rate,
-                "contamination_pct": round(c_rate * 100.0, 2),
-                "n_benign_train": len(X_benign_tr),
-                "n_injected_dev_attacks": n_injected,
-                "training_method": method_name,
-                "trim_pct": trim_pct if is_trimmed else 0.0,
-                "held_out_auroc": round(auroc_ho, 4),
-                "all_attack_auroc": round(auroc_all, 4),
-                "held_out_tpr_at_fpr01": round(tpr_ho_01, 4),
-                "held_out_tpr_at_fpr001": round(tpr_ho_001, 4),
-                "benign_fpr_at_01": round(fpr_ben_01, 4),
-                "benign_fpr_ci95_low": round(ci_01[0], 5),
-                "benign_fpr_ci95_high": round(ci_01[1], 5),
-                "benign_fpr_at_001": round(fpr_ben_001, 4),
-                "baseline_clean_tpr_01": round(baseline_clean_tpr or tpr_ho_01, 4),
-                "source": source_tag,
-            })
+            rows.append(
+                {
+                    "contamination_rate": c_rate,
+                    "contamination_pct": round(c_rate * 100.0, 2),
+                    "n_benign_train": len(X_benign_tr),
+                    "n_injected_dev_attacks": n_injected,
+                    "training_method": method_name,
+                    "trim_pct": trim_pct if is_trimmed else 0.0,
+                    "held_out_auroc": round(auroc_ho, 4),
+                    "all_attack_auroc": round(auroc_all, 4),
+                    "held_out_tpr_at_fpr01": round(tpr_ho_01, 4),
+                    "held_out_tpr_at_fpr001": round(tpr_ho_001, 4),
+                    "benign_fpr_at_01": round(fpr_ben_01, 4),
+                    "benign_fpr_ci95_low": round(ci_01[0], 5),
+                    "benign_fpr_ci95_high": round(ci_01[1], 5),
+                    "benign_fpr_at_001": round(fpr_ben_001, 4),
+                    "baseline_clean_tpr_01": round(baseline_clean_tpr or tpr_ho_01, 4),
+                    "source": source_tag,
+                }
+            )
 
     res_df = pd.DataFrame(rows)
     out_csv = os.path.join(out_dir, "contamination_study.csv")
@@ -263,4 +262,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

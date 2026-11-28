@@ -14,6 +14,7 @@ and computes:
   - Time-to-reach checkpoints 4, 8, and 16 payload packets (median & p95 in ms)
 Writes summary table to demo/evidence/real/iot23_benign_audit.csv.
 """
+
 import os
 import sys
 import glob
@@ -49,7 +50,7 @@ def audit_capture(cap_name: str, pcap_paths: list, early_n: int = 16) -> dict:
     total_bytes = 0
     for p in sorted(pcap_paths):
         total_bytes += os.path.getsize(p)
-        print(f"  [stream] Parsing {os.path.basename(p)} ({os.path.getsize(p)/1024/1024:.2f} MB) ...", flush=True)
+        print(f"  [stream] Parsing {os.path.basename(p)} ({os.path.getsize(p) / 1024 / 1024:.2f} MB) ...", flush=True)
         df_p = adapt_iot23_pcap(p, capture_name=cap_name, early_n=early_n, is_attack=0)
         dfs.append(df_p)
 
@@ -126,7 +127,22 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(args.out_csv)), exist_ok=True)
     out_df.to_csv(args.out_csv, index=False)
     print("\n=== IoT-23 Benign Real Pcap Audit Summary ===")
-    print(out_df[["capture", "pcap_mb", "flows", "tls_pct", "pct_reach_k4", "pct_reach_k8", "pct_reach_k16", "ttv_k4_p50_ms", "ttv_k8_p50_ms", "ttv_k16_p50_ms"]].to_string(index=False))
+    print(
+        out_df[
+            [
+                "capture",
+                "pcap_mb",
+                "flows",
+                "tls_pct",
+                "pct_reach_k4",
+                "pct_reach_k8",
+                "pct_reach_k16",
+                "ttv_k4_p50_ms",
+                "ttv_k8_p50_ms",
+                "ttv_k16_p50_ms",
+            ]
+        ].to_string(index=False)
+    )
     print(f"\n[+] Wrote {args.out_csv}")
 
 

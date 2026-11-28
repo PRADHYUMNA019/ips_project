@@ -6,6 +6,7 @@ Only Testbed D (Merlin over HTTP/2-over-TLS) is used as a TLS C2 family.
 Produces the single canonical 3N+8 feature vector via ips.features.build_early_vector
 plus standard flow-key metadata columns.
 """
+
 import os
 import sys
 import io
@@ -21,12 +22,33 @@ from ips.offline.pcap_to_flows import extract_flows_from_pcap
 
 # Verified against Zenodo record 21523144 (TQH-C2 v1.2.0, CC-BY-4.0, features_D/testbed_D.parquet)
 VERIFIED_TQH_PARQUET_COLUMNS: Set[str] = {
-    "ts", "uid", "orig_h", "resp_h", "duration",
-    "orig_bytes", "resp_bytes", "orig_pkts", "resp_pkts",
-    "orig_p", "resp_p", "proto", "conn_state", "history",
-    "orig_ip_bytes", "resp_ip_bytes", "missed_bytes",
-    "ja4", "ja4s", "ja4h", "profile", "encryption_profile",
-    "interval_s", "jitter_pct", "capture_id", "label_raw", "y",
+    "ts",
+    "uid",
+    "orig_h",
+    "resp_h",
+    "duration",
+    "orig_bytes",
+    "resp_bytes",
+    "orig_pkts",
+    "resp_pkts",
+    "orig_p",
+    "resp_p",
+    "proto",
+    "conn_state",
+    "history",
+    "orig_ip_bytes",
+    "resp_ip_bytes",
+    "missed_bytes",
+    "ja4",
+    "ja4s",
+    "ja4h",
+    "profile",
+    "encryption_profile",
+    "interval_s",
+    "jitter_pct",
+    "capture_id",
+    "label_raw",
+    "y",
 }
 
 
@@ -101,9 +123,7 @@ def load_tqh_parquet_summary(filepath: str, member: str = "features_D/testbed_D.
     out["total_pkts"] = out["orig_pkts"].fillna(0).astype(int) + out["resp_pkts"].fillna(0).astype(int)
     out["total_bytes"] = out["orig_bytes"].fillna(0.0) + out["resp_bytes"].fillna(0.0)
     out["is_attack"] = out["y"].astype(int)
-    out["label_family"] = out["label_raw"].astype(str).map(
-        lambda v: "A3_c2" if "c2" in v.lower() or "malicious" in v.lower() else "benign"
-    )
+    out["label_family"] = out["label_raw"].astype(str).map(lambda v: "A3_c2" if "c2" in v.lower() or "malicious" in v.lower() else "benign")
     out["source"] = "real-public-tqh"
     out["domain"] = "tqh-c2-d"
     return out

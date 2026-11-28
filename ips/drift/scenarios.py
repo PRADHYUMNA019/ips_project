@@ -20,6 +20,7 @@ Baselines compared:
 Rule B0: When run in smoke mode (default when no real stream CSV is provided),
 prints "SMOKE DATA – NOT A RESULT" and writes ONLY under results/smoke/.
 """
+
 import os
 import sys
 import argparse
@@ -27,6 +28,7 @@ from typing import List, Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -35,7 +37,7 @@ sys.path.insert(0, REPO_DIR)
 
 from ips.drift.guard import PoisoningAwareDriftGuard, GuardConfig
 from ips.drift.periodicity import SlowC2Tracker
-from ips.drift.evasion_cost import run_cost_of_evasion_experiment, generate_adaptive_boiling_frog_sequence
+from ips.drift.evasion_cost import run_cost_of_evasion_experiment
 
 
 SENSOR_DEVICES = ["sensor-01", "sensor-02", "sensor-03", "sensor-04"]
@@ -68,13 +70,15 @@ def generate_scenario_windows(scenario: str, n_windows: int = 16, seed: int = 42
             ben_mean = 0.10 if w < 5 else 0.185
             for dev in devices:
                 for _ in range(15):
-                    win.append({
-                        "device_id": dev,
-                        "score": float(rng.normal(ben_mean, 0.018)),
-                        "iat_ms": float(rng.gamma(shape=3.0, scale=300.0)),  # aperiodic CV ~ 0.58
-                        "is_attack": False,
-                        "is_clean_benign": True,
-                    })
+                    win.append(
+                        {
+                            "device_id": dev,
+                            "score": float(rng.normal(ben_mean, 0.018)),
+                            "iat_ms": float(rng.gamma(shape=3.0, scale=300.0)),  # aperiodic CV ~ 0.58
+                            "is_attack": False,
+                            "is_clean_benign": True,
+                        }
+                    )
             # Inject test attacks in evaluation windows (held separate for TPR measurement)
             windows.append(win)
         return devices, windows
@@ -87,13 +91,15 @@ def generate_scenario_windows(scenario: str, n_windows: int = 16, seed: int = 42
             ben_mean = 0.10 + ramp
             for dev in devices:
                 for _ in range(15):
-                    win.append({
-                        "device_id": dev,
-                        "score": float(rng.normal(ben_mean, 0.016)),
-                        "iat_ms": float(rng.gamma(shape=2.5, scale=400.0)),
-                        "is_attack": False,
-                        "is_clean_benign": True,
-                    })
+                    win.append(
+                        {
+                            "device_id": dev,
+                            "score": float(rng.normal(ben_mean, 0.016)),
+                            "iat_ms": float(rng.gamma(shape=2.5, scale=400.0)),
+                            "is_attack": False,
+                            "is_clean_benign": True,
+                        }
+                    )
             windows.append(win)
         return devices, windows
 
@@ -106,22 +112,26 @@ def generate_scenario_windows(scenario: str, n_windows: int = 16, seed: int = 42
                     # Compromised sensor-01 injects gradually escalating periodic poisoning flows
                     poison_mean = min(0.54, 0.16 + (w - 3) * 0.045)
                     for _ in range(25):
-                        win.append({
-                            "device_id": dev,
-                            "score": float(rng.normal(poison_mean, 0.015)),
-                            "iat_ms": float(rng.normal(500.0, 25.0)),  # periodic CV ~ 0.05
-                            "is_attack": True,
-                            "is_clean_benign": False,
-                        })
+                        win.append(
+                            {
+                                "device_id": dev,
+                                "score": float(rng.normal(poison_mean, 0.015)),
+                                "iat_ms": float(rng.normal(500.0, 25.0)),  # periodic CV ~ 0.05
+                                "is_attack": True,
+                                "is_clean_benign": False,
+                            }
+                        )
                 else:
                     for _ in range(15):
-                        win.append({
-                            "device_id": dev,
-                            "score": float(rng.normal(0.10, 0.018)),
-                            "iat_ms": float(rng.gamma(shape=3.0, scale=300.0)),
-                            "is_attack": False,
-                            "is_clean_benign": True,
-                        })
+                        win.append(
+                            {
+                                "device_id": dev,
+                                "score": float(rng.normal(0.10, 0.018)),
+                                "iat_ms": float(rng.gamma(shape=3.0, scale=300.0)),
+                                "is_attack": False,
+                                "is_clean_benign": True,
+                            }
+                        )
             windows.append(win)
         return devices, windows
 
@@ -134,38 +144,44 @@ def generate_scenario_windows(scenario: str, n_windows: int = 16, seed: int = 42
                 if dev in compromised and w >= 4:
                     poison_mean = min(0.60, 0.24 + (w - 4) * 0.06)
                     for _ in range(20):
-                        win.append({
-                            "device_id": dev,
-                            "score": float(rng.normal(poison_mean, 0.018)),
-                            "iat_ms": float(rng.gamma(shape=2.5, scale=350.0)),  # non-periodic (defeats G3!)
-                            "is_attack": True,
-                            "is_clean_benign": False,
-                        })
+                        win.append(
+                            {
+                                "device_id": dev,
+                                "score": float(rng.normal(poison_mean, 0.018)),
+                                "iat_ms": float(rng.gamma(shape=2.5, scale=350.0)),  # non-periodic (defeats G3!)
+                                "is_attack": True,
+                                "is_clean_benign": False,
+                            }
+                        )
                 else:
                     for _ in range(15):
-                        win.append({
-                            "device_id": dev,
-                            "score": float(rng.normal(0.10, 0.018)),
-                            "iat_ms": float(rng.gamma(shape=3.0, scale=300.0)),
-                            "is_attack": False,
-                            "is_clean_benign": True,
-                        })
+                        win.append(
+                            {
+                                "device_id": dev,
+                                "score": float(rng.normal(0.10, 0.018)),
+                                "iat_ms": float(rng.gamma(shape=3.0, scale=300.0)),
+                                "is_attack": False,
+                                "is_clean_benign": True,
+                            }
+                        )
             windows.append(win)
         return devices, windows
 
     if scenario == "S5_mimicry_and_slow_c2":
         devices = SENSOR_DEVICES
-        for w in range(n_windows):
+        for _w in range(n_windows):
             win = []
             for dev in devices:
                 for _ in range(15):
-                    win.append({
-                        "device_id": dev,
-                        "score": float(rng.normal(0.10, 0.018)),
-                        "iat_ms": float(rng.gamma(shape=3.0, scale=300.0)),
-                        "is_attack": False,
-                        "is_clean_benign": True,
-                    })
+                    win.append(
+                        {
+                            "device_id": dev,
+                            "score": float(rng.normal(0.10, 0.018)),
+                            "iat_ms": float(rng.gamma(shape=3.0, scale=300.0)),
+                            "is_attack": False,
+                            "is_clean_benign": True,
+                        }
+                    )
             windows.append(win)
         return devices, windows
 
@@ -230,13 +246,15 @@ def run_method_on_scenario(
             post_shift_fprs.append(win_fpr)
             post_shift_tprs.append(win_tpr)
 
-        trace.append({
-            "window": w_idx,
-            "threshold": cur_t,
-            "clean_benign_fpr": round(win_fpr, 4),
-            "attack_tpr": round(win_tpr, 4),
-            "status": step_res["status"],
-        })
+        trace.append(
+            {
+                "window": w_idx,
+                "threshold": cur_t,
+                "clean_benign_fpr": round(win_fpr, 4),
+                "attack_tpr": round(win_tpr, 4),
+                "status": step_res["status"],
+            }
+        )
 
     summary = {
         "source": "synthetic-smoke",
@@ -308,8 +326,13 @@ def run_all_drift_scenarios(out_dir: str, is_smoke: bool = True) -> pd.DataFrame
             tr = traces_by_scen[scen][m_plot]
             ws = [x["window"] for x in tr]
             axes[0].plot(ws, [x["threshold"] for x in tr], marker="o", markersize=3, label=m_plot)
-            axes[1].plot(ws, [x["attack_tpr"] if "S3" in scen or "S4" in scen else x["clean_benign_fpr"] for x in tr],
-                         marker="s", markersize=3, label=m_plot)
+            axes[1].plot(
+                ws,
+                [x["attack_tpr"] if "S3" in scen or "S4" in scen else x["clean_benign_fpr"] for x in tr],
+                marker="s",
+                markersize=3,
+                label=m_plot,
+            )
         axes[0].set_title(f"{scen}: Threshold Trajectory")
         axes[0].set_xlabel("Window")
         axes[0].set_ylabel("Threshold")
@@ -349,13 +372,15 @@ def evaluate_cesnet_natural_drift(out_dir: str, is_smoke: bool = True, seed: int
         # Gradual natural shift in benign TLS record sizes across weeks 3..8
         mean_s = 0.10 if wk <= 2 else (0.10 + min(0.08, (wk - 2) * 0.013))
         for _ in range(60):
-            win.append({
-                "device_id": "cesnet_anonymized_pool",
-                "score": float(rng.normal(mean_s, 0.017)),
-                "iat_ms": float(rng.gamma(shape=3.0, scale=280.0)),
-                "is_attack": False,
-                "is_clean_benign": True,
-            })
+            win.append(
+                {
+                    "device_id": "cesnet_anonymized_pool",
+                    "score": float(rng.normal(mean_s, 0.017)),
+                    "iat_ms": float(rng.gamma(shape=3.0, scale=280.0)),
+                    "is_attack": False,
+                    "is_clean_benign": True,
+                }
+            )
         weekly_windows.append((wk, win))
 
     # G2 is explicitly disabled because CESNET has no device identities (B5)
@@ -379,16 +404,18 @@ def evaluate_cesnet_natural_drift(out_dir: str, is_smoke: bool = True, seed: int
             res = guard.evaluate_window(win_events, mode=m_mode)
             scores = np.array([e["score"] for e in win_events], dtype=np.float64)
             fpr = float(np.mean(scores > guard.threshold))
-            rows.append({
-                "week": wk,
-                "method": m_name,
-                "threshold": round(guard.threshold, 5),
-                "benign_fpr": round(fpr, 4),
-                "status": res["status"],
-                "g2_applicable": False,
-                "g2_note": "CESNET has hashed IPs and no device identities; only G1/G3/G4 + EVT apply (B5)",
-                "source": source_tag,
-            })
+            rows.append(
+                {
+                    "week": wk,
+                    "method": m_name,
+                    "threshold": round(guard.threshold, 5),
+                    "benign_fpr": round(fpr, 4),
+                    "status": res["status"],
+                    "g2_applicable": False,
+                    "g2_note": "CESNET has hashed IPs and no device identities; only G1/G3/G4 + EVT apply (B5)",
+                    "source": source_tag,
+                }
+            )
 
     res_df = pd.DataFrame(rows)
     os.makedirs(out_dir, exist_ok=True)

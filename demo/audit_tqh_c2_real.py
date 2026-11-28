@@ -9,6 +9,7 @@ Computes per-(interval_s, jitter_pct) cell:
   3. Host-pair inter-connection CV (min_connections=8, rule CV <= 0.35 and full SlowC2Tracker)
      for BOTH malicious C2 host pairs AND benign background host pairs (false-positive baseline).
 """
+
 import os
 import sys
 import argparse
@@ -84,53 +85,67 @@ def main():
         c2_stats = compute_pair_stats(c2, min_conns=8, cv_thresh=0.35)
         ben_stats = compute_pair_stats(ben, min_conns=8, cv_thresh=0.35)
 
-        rows.append({
-            "source": "REAL PUBLIC DATA (TQH-C2 Testbed D, Zenodo 21523144)",
-            "interval_s": int(iv),
-            "jitter_pct": int(jt),
-            "total_flows": int(len(cell)),
-            "c2_flows": int(len(c2)),
-            "benign_flows": int(len(ben)),
-            "c2_total_pkts_p50": round(float(np.median(c2_pkts)), 1),
-            "c2_total_pkts_p95": round(float(np.percentile(c2_pkts, 95)), 1),
-            "c2_pct_raw_pkts_ge_4": round(float((c2_pkts >= 4).mean() * 100.0), 2),
-            "c2_pct_raw_pkts_ge_8": round(float((c2_pkts >= 8).mean() * 100.0), 2),
-            "c2_pct_raw_pkts_ge_16": round(float((c2_pkts >= 16).mean() * 100.0), 2),
-            "c2_pct_est_payload_ge_4": round(float((c2_est_pay >= 4).mean() * 100.0), 2),
-            "c2_pct_est_payload_ge_8": round(float((c2_est_pay >= 8).mean() * 100.0), 2),
-            "c2_pct_est_payload_ge_16": round(float((c2_est_pay >= 16).mean() * 100.0), 2),
-            "c2_duration_p50_s": round(float(np.median(c2_dur)), 4),
-            "c2_duration_p95_s": round(float(np.percentile(c2_dur, 95)), 4),
-            "c2_duration_max_s": round(float(np.max(c2_dur)), 2),
-            "c2_host_pairs_ge_8_conns": c2_stats["pairs_ge_8"],
-            "c2_pair_median_inter_conn_s": c2_stats["median_inter_conn_s"],
-            "c2_pair_median_cv": c2_stats["median_cv"],
-            "c2_pairs_flagged_cv_le_035": c2_stats["flagged_cv_le_035"],
-            "c2_pairs_flagged_full_tracker": c2_stats["flagged_full_tracker"],
-            "benign_host_pairs_ge_8_conns": ben_stats["pairs_ge_8"],
-            "benign_pair_median_inter_conn_s": ben_stats["median_inter_conn_s"],
-            "benign_pair_median_cv": ben_stats["median_cv"],
-            "benign_pair_min_cv": ben_stats["min_cv"],
-            "benign_pairs_flagged_cv_le_035": ben_stats["flagged_cv_le_035"],
-            "benign_pairs_flagged_full_tracker": ben_stats["flagged_full_tracker"],
-            "benign_pair_fpr_cv_le_035": ben_stats["fpr_or_tpr_cv_le_035"],
-        })
+        rows.append(
+            {
+                "source": "REAL PUBLIC DATA (TQH-C2 Testbed D, Zenodo 21523144)",
+                "interval_s": int(iv),
+                "jitter_pct": int(jt),
+                "total_flows": int(len(cell)),
+                "c2_flows": int(len(c2)),
+                "benign_flows": int(len(ben)),
+                "c2_total_pkts_p50": round(float(np.median(c2_pkts)), 1),
+                "c2_total_pkts_p95": round(float(np.percentile(c2_pkts, 95)), 1),
+                "c2_pct_raw_pkts_ge_4": round(float((c2_pkts >= 4).mean() * 100.0), 2),
+                "c2_pct_raw_pkts_ge_8": round(float((c2_pkts >= 8).mean() * 100.0), 2),
+                "c2_pct_raw_pkts_ge_16": round(float((c2_pkts >= 16).mean() * 100.0), 2),
+                "c2_pct_est_payload_ge_4": round(float((c2_est_pay >= 4).mean() * 100.0), 2),
+                "c2_pct_est_payload_ge_8": round(float((c2_est_pay >= 8).mean() * 100.0), 2),
+                "c2_pct_est_payload_ge_16": round(float((c2_est_pay >= 16).mean() * 100.0), 2),
+                "c2_duration_p50_s": round(float(np.median(c2_dur)), 4),
+                "c2_duration_p95_s": round(float(np.percentile(c2_dur, 95)), 4),
+                "c2_duration_max_s": round(float(np.max(c2_dur)), 2),
+                "c2_host_pairs_ge_8_conns": c2_stats["pairs_ge_8"],
+                "c2_pair_median_inter_conn_s": c2_stats["median_inter_conn_s"],
+                "c2_pair_median_cv": c2_stats["median_cv"],
+                "c2_pairs_flagged_cv_le_035": c2_stats["flagged_cv_le_035"],
+                "c2_pairs_flagged_full_tracker": c2_stats["flagged_full_tracker"],
+                "benign_host_pairs_ge_8_conns": ben_stats["pairs_ge_8"],
+                "benign_pair_median_inter_conn_s": ben_stats["median_inter_conn_s"],
+                "benign_pair_median_cv": ben_stats["median_cv"],
+                "benign_pair_min_cv": ben_stats["min_cv"],
+                "benign_pairs_flagged_cv_le_035": ben_stats["flagged_cv_le_035"],
+                "benign_pairs_flagged_full_tracker": ben_stats["flagged_full_tracker"],
+                "benign_pair_fpr_cv_le_035": ben_stats["fpr_or_tpr_cv_le_035"],
+            }
+        )
 
     out_df = pd.DataFrame(rows)
     os.makedirs(os.path.dirname(os.path.abspath(args.out_csv)), exist_ok=True)
     out_df.to_csv(args.out_csv, index=False)
-    print(out_df[[
-        "interval_s", "jitter_pct",
-        "c2_host_pairs_ge_8_conns", "c2_pair_median_cv", "c2_pairs_flagged_cv_le_035",
-        "benign_host_pairs_ge_8_conns", "benign_pair_median_cv", "benign_pair_min_cv",
-        "benign_pairs_flagged_cv_le_035", "benign_pairs_flagged_full_tracker",
-    ]].to_string(index=False))
+    print(
+        out_df[
+            [
+                "interval_s",
+                "jitter_pct",
+                "c2_host_pairs_ge_8_conns",
+                "c2_pair_median_cv",
+                "c2_pairs_flagged_cv_le_035",
+                "benign_host_pairs_ge_8_conns",
+                "benign_pair_median_cv",
+                "benign_pair_min_cv",
+                "benign_pairs_flagged_cv_le_035",
+                "benign_pairs_flagged_full_tracker",
+            ]
+        ].to_string(index=False)
+    )
     tot_c2 = int(out_df["c2_host_pairs_ge_8_conns"].sum())
     fl_c2 = int(out_df["c2_pairs_flagged_cv_le_035"].sum())
     tot_ben = int(out_df["benign_host_pairs_ge_8_conns"].sum())
     fl_ben_cv = int(out_df["benign_pairs_flagged_cv_le_035"].sum())
     fl_ben_tr = int(out_df["benign_pairs_flagged_full_tracker"].sum())
-    print(f"\n[TOTALS] C2 pairs >=8 conns: {fl_c2}/{tot_c2} flagged (CV<=0.35) | Benign pairs >=8 conns: {fl_ben_cv}/{tot_ben} flagged by CV<=0.35 ({fl_ben_tr}/{tot_ben} by full SlowC2Tracker)")
+    print(
+        f"\n[TOTALS] C2 pairs >=8 conns: {fl_c2}/{tot_c2} flagged (CV<=0.35) | Benign pairs >=8 conns: {fl_ben_cv}/{tot_ben} flagged by CV<=0.35 ({fl_ben_tr}/{tot_ben} by full SlowC2Tracker)"
+    )
     print(f"[+] Wrote {args.out_csv}")
 
 

@@ -2,6 +2,7 @@
 """
 tests/test_reproduce.py — V1 unit tests for WP9 (ips/eval/reproduce.py and Rule B0 isolation).
 """
+
 import os
 import pandas as pd
 import pytest
@@ -28,4 +29,3 @@ def test_generate_results_md_truthful_when_no_real_data(tmp_path):
         text = f.read()
     assert "NOT RUN" in text
     assert "synthetic-smoke" in text  # mentioned in Rule B0 header note
-

@@ -18,13 +18,13 @@ from typing import Dict, Any, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Definition of mutations M1..M16 with verified exact target strings and precise target tests
-MUTATIONS = [
+# Definition of mutations M1..M17+ with verified exact target strings and precise target tests
+MUTATIONS: List[Dict[str, Any]] = [
     {
         "id": "M1",
         "file": "ips/offline/pcap_to_flows.py",
-        "target": "if payload_len > 0 and len(flow[\"sizes\"]) < early_n:",
-        "replacement": "if payload_len >= 0 and len(flow[\"sizes\"]) < early_n:  # M1: count zero-payload",
+        "target": 'if payload_len > 0 and len(flow["sizes"]) < early_n:',
+        "replacement": 'if payload_len >= 0 and len(flow["sizes"]) < early_n:  # M1: count zero-payload',
         "tests": [
             "tests/test_features.py::test_pcap_to_flows_golden_fixture",
             "tests/test_features.py::test_reused_5tuple_flow_instances_and_metadata",
@@ -56,7 +56,7 @@ MUTATIONS = [
     {
         "id": "M4",
         "file": "ips/features.py",
-        "target": "inter = lower_names.intersection(FORBIDDEN_COLUMNS)\n    if inter:\n        raise ValueError(f\"CRITICAL SHORTCUT LEARNING VIOLATION: Forbidden features found: {inter}\")",
+        "target": 'inter = lower_names.intersection(FORBIDDEN_COLUMNS)\n    if inter:\n        raise ValueError(f"CRITICAL SHORTCUT LEARNING VIOLATION: Forbidden features found: {inter}")',
         "replacement": "pass  # M4: neutralise forbidden-column shortcut guard",
         "tests": ["tests/test_features.py::test_shortcut_guard"],
         "desc": "Remove / neutralise forbidden-column shortcut guard",
@@ -65,7 +65,7 @@ MUTATIONS = [
     {
         "id": "M5",
         "file": "ips/data/build_splits.py",
-        "target": "if overlap:\n                raise ValueError(\n                    f\"CRITICAL SPLIT LEAKAGE (B2a): session_id(s) {overlap} appear in both '{k1}' and '{k2}'!\"\n                )",
+        "target": "if overlap:\n                raise ValueError(f\"CRITICAL SPLIT LEAKAGE (B2a): session_id(s) {overlap} appear in both '{k1}' and '{k2}'!\")",
         "replacement": "pass  # M5: allow session overlap across splits",
         "tests": ["tests/test_splits_and_joins.py::test_split_integrity_assertions_a_b_c_d"],
         "desc": "Disable assertion that sessions appear in only one split",
@@ -74,7 +74,7 @@ MUTATIONS = [
     {
         "id": "M6",
         "file": "ips/data/build_splits.py",
-        "target": "if \"is_attack\" in df_b.columns and (df_b[\"is_attack\"].astype(int) != 0).any():\n                raise ValueError(f\"CRITICAL SPLIT LEAKAGE (B2b): attack flows found in benign split '{b_name}'!\")",
+        "target": 'if "is_attack" in df_b.columns and (df_b["is_attack"].astype(int) != 0).any():\n                raise ValueError(f"CRITICAL SPLIT LEAKAGE (B2b): attack flows found in benign split \'{b_name}\'!")',
         "replacement": "pass  # M6: allow attack in calibration split",
         "tests": ["tests/test_splits_and_joins.py::test_split_integrity_assertions_a_b_c_d"],
         "desc": "Allow attack flows into calibration split",
@@ -119,7 +119,7 @@ MUTATIONS = [
     {
         "id": "M10b",
         "file": "ips/drift/guard.py",
-        "target": "if per_res[\"is_periodic\"]:",
+        "target": 'if per_res["is_periodic"]:',
         "replacement": "if False:  # M10b: disable G3",
         "tests": ["tests/test_drift_guard.py::test_g2_quorum_and_g3_periodicity_checks"],
         "desc": "Disable guard check G3 (force non-periodicity to always pass)",
@@ -128,8 +128,8 @@ MUTATIONS = [
     {
         "id": "M11",
         "file": "ips/engine/engine.py",
-        "target": "if self.mode == \"enforce\":",
-        "replacement": "if self.mode in (\"enforce\", \"observe\"):  # M11: observe writes verdicts",
+        "target": 'if self.mode == "enforce":',
+        "replacement": 'if self.mode in ("enforce", "observe"):  # M11: observe writes verdicts',
         "tests": ["tests/test_engine_closed_loop.py::test_observe_vs_enforce_and_explainability"],
         "desc": "Make observe mode write verdicts to BPF map (violates observe contract)",
         "should_catch": "tests/test_engine_closed_loop.py::test_observe_vs_enforce_and_explainability",
@@ -137,8 +137,8 @@ MUTATIONS = [
     {
         "id": "M12",
         "file": "scripts/topology.sh",
-        "target": "local trimmed=\"${line#\"${line%%[![:space:]]*}\"}\"",
-        "replacement": "local trimmed=\"$line\"  # M12: reintroduce trimmed-line bug",
+        "target": 'local trimmed="${line#"${line%%[![:space:]]*}"}"',
+        "replacement": 'local trimmed="$line"  # M12: reintroduce trimmed-line bug',
         "tests": ["tests/test_topology_parse.py::test_topology_sh_source_syntax_and_trimming"],
         "desc": "Reintroduce trimmed-line bug in topology.sh parse_devices",
         "should_catch": "tests/test_topology_parse.py::test_topology_sh_source_syntax_and_trimming",
@@ -155,8 +155,8 @@ MUTATIONS = [
     {
         "id": "M14",
         "file": "ips/engine/schema.py",
-        "target": "(\"checkpoint_idx\", ctypes.c_uint8),",
-        "replacement": "(\"checkpoint_idx\", ctypes.c_uint32),  # M14: offset desync",
+        "target": '("checkpoint_idx", ctypes.c_uint8),',
+        "replacement": '("checkpoint_idx", ctypes.c_uint32),  # M14: offset desync',
         "tests": [
             "tests/test_schema_and_equivalence.py::test_early_flow_event_roundtrip",
             "tests/test_schema_and_equivalence.py::test_c_header_and_ctypes_sync_across_early_n",
@@ -167,7 +167,7 @@ MUTATIONS = [
     {
         "id": "M15",
         "file": "ips/eval/harness.py",
-        "target": "fpr = (fp / max(1, (fp + tn)))",
+        "target": "fpr = fp / max(1, (fp + tn))",
         "replacement": "fpr = (fp / max(1, (tp + fn)))  # M15: wrong FPR denominator",
         "tests": [
             "tests/test_engine_closed_loop.py::test_operational_harm_and_netem_impairment_c10_c11",
@@ -197,6 +197,108 @@ MUTATIONS = [
         "desc": "Remove per-packet log-IAT /7.0 normalisation and [0, 1.5] clip",
         "should_catch": "tests/test_features.py::test_feature_group_ranges_and_no_iat_dominance_p9_2c",
     },
+    {
+        "id": "M18",
+        "file": "ips/engine/schema.py",
+        "target": 'f"#define SCHEMA_VERSION {SCHEMA_VERSION}",',
+        "replacement": '"#define SCHEMA_VERSION 99",  # M18: desync generated C header schema version',
+        "tests": [
+            "tests/test_bugfixes_p10.py::test_bug06_generated_constants_header_and_c_struct_parser_sync",
+            "tests/test_schema_and_equivalence.py::test_c_header_and_ctypes_sync_across_early_n",
+        ],
+        "desc": "Desynchronize SCHEMA_VERSION in C header generator vs ebpf/generated_constants.h",
+        "should_catch": "tests/test_bugfixes_p10.py::test_bug06_generated_constants_header_and_c_struct_parser_sync",
+    },
+    {
+        "id": "M19",
+        "file": "ips/engine/schema.py",
+        "target": "if (ip1 < ip2) or (ip1 == ip2 and p1 <= p2):",
+        "replacement": "if True:  # M19: break canonical FlowKey symmetry",
+        "tests": ["tests/test_prop_flow_key.py::test_prop_flow_key_symmetry_stability_and_c_byte_equivalence"],
+        "desc": "Break canonical bidirectional FlowKey symmetry (A->B != B->A)",
+        "should_catch": "tests/test_prop_flow_key.py::test_prop_flow_key_symmetry_stability_and_c_byte_equivalence",
+    },
+    {
+        "id": "M20",
+        "file": "ips/features.py",
+        "target": 'if (d - 8) <= 0 or (d - 8) % 3 != 0:\n        raise ValueError(f"Feature dimension d={d} does not match canonical 3*N + 8 early-flow schema; cannot infer valid_len mask.")',
+        "replacement": "if (d - 8) <= 0 or (d - 8) % 3 != 0:\n        return np.ones_like(x, dtype=np.float32)  # M20: silent fallback",
+        "tests": ["tests/test_bugfixes_p10.py::test_bug01_build_valid_mask_raises_on_invalid_and_masks_zero_len"],
+        "desc": "Reintroduce silent all-ones mask fallback on invalid feature dimensions",
+        "should_catch": "tests/test_bugfixes_p10.py::test_bug01_build_valid_mask_raises_on_invalid_and_masks_zero_len",
+    },
+    {
+        "id": "M21",
+        "file": "ips/features.py",
+        "target": "min(1.5, mean_log_iat / 7.0),",
+        "replacement": "mean_log_iat,  # M21: drop /7.0 & 1.5 clip on aggregate mean_log_iat",
+        "tests": ["tests/test_prop_features.py::test_prop_feature_vector_bounds_finiteness_and_mask"],
+        "desc": "Remove [0, 1.5] scaling/clipping on aggregate mean_log_iat",
+        "should_catch": "tests/test_prop_features.py::test_prop_feature_vector_bounds_finiteness_and_mask",
+    },
+    {
+        "id": "M22",
+        "file": "ips/offline/pcap_to_flows.py",
+        "target": 'elif idle_limit_s > 0.0 and (float(ts) - cur["last_seen_ts"]) > idle_limit_s:\n                        reinit = True',
+        "replacement": "elif False:  # M22: remove flow_idle_s split rule\n                        reinit = False",
+        "tests": ["tests/test_features.py::test_offline_extractor_idle_timeout_and_syn_lifecycle_p9_3b"],
+        "desc": "Remove kernel-matching flow_idle_s timeout rule in pcap_to_flows",
+        "should_catch": "tests/test_features.py::test_offline_extractor_idle_timeout_and_syn_lifecycle_p9_3b",
+    },
+    {
+        "id": "M23",
+        "file": "ips/offline/pcap_to_flows.py",
+        "target": 'if frag_bytes > 0 or raw_foff > 0:\n                    skipped_counts["ip_fragment"] += 1\n                    continue',
+        "replacement": "if False:  # M23: allow non-initial IPv4 fragments through to L4 parser\n                    pass",
+        "tests": [
+            "tests/test_bugfixes_p10.py::test_bug07_pcap_fragment_guard_and_packet_conservation",
+            "tests/test_prop_pcap_to_flows.py::test_prop_pcap_fuzz_never_crashes_and_conserves_packet_counts",
+        ],
+        "desc": "Disable non-initial IPv4 fragment guard in pcap_to_flows",
+        "should_catch": "tests/test_bugfixes_p10.py::test_bug07_pcap_fragment_guard_and_packet_conservation",
+    },
+    {
+        "id": "M24",
+        "file": "ips/engine/engine.py",
+        "target": 'self.drop_ttl_ns = int(float(sys_cfg.get("drop_ttl_s", 60)) * 1e9)',
+        "replacement": 'self.drop_ttl_ns = -int(float(sys_cfg.get("drop_ttl_s", 60)) * 1e9)  # M24: negative TTL',
+        "tests": [
+            "tests/test_prop_engine_mock.py::test_prop_engine_invariants_under_random_streams",
+            "tests/test_engine_closed_loop.py::test_enforce_per_flow_drop_and_ttl_expiry",
+        ],
+        "desc": "Corrupt drop_ttl_ns sign/unit in IPSEngine",
+        "should_catch": "tests/test_prop_engine_mock.py::test_prop_engine_invariants_under_random_streams",
+    },
+    {
+        "id": "M25",
+        "file": "ips/engine/engine.py",
+        "target": "if k not in self.flow_state and len(self.flow_state) >= self.flow_map_max:\n                self.flow_state.popitem(last=False)",
+        "replacement": "pass  # M25: disable LRU capacity eviction in MockBPFBackend",
+        "tests": [
+            "tests/test_bugfixes_p10.py::test_bug02_mock_backend_lru_capacity_and_tier0_syn_bucket",
+            "tests/test_prop_engine_mock.py::test_prop_engine_invariants_under_random_streams",
+        ],
+        "desc": "Disable flow_map_max LRU eviction in MockBPFBackend",
+        "should_catch": "tests/test_prop_engine_mock.py::test_prop_engine_invariants_under_random_streams",
+    },
+    {
+        "id": "M26",
+        "file": "ips/drift/guard.py",
+        "target": "new_thresh = float(np.clip(cand_thresh, low_b, high_b))",
+        "replacement": "new_thresh = float(cand_thresh * 4.0)  # M26: violate bounded-step invariant",
+        "tests": ["tests/test_prop_drift_guard.py::test_prop_drift_guard_bounded_step_and_exact_rollback"],
+        "desc": "Violate bounded-step threshold update invariant in PoisoningAwareDriftGuard",
+        "should_catch": "tests/test_prop_drift_guard.py::test_prop_drift_guard_bounded_step_and_exact_rollback",
+    },
+    {
+        "id": "M27",
+        "file": "ips/models/evt.py",
+        "target": "tau = float(sorted_scores[k_1idx - 1])",
+        "replacement": "tau = float(sorted_scores[n - k_1idx])  # M27: break conformal monotonicity",
+        "tests": ["tests/test_prop_thresholds.py::test_prop_evt_finiteness_conformal_monotonicity_and_3sigma"],
+        "desc": "Invert order-statistic index in split-conformal quantile (violating alpha monotonicity)",
+        "should_catch": "tests/test_prop_thresholds.py::test_prop_evt_finiteness_conformal_monotonicity_and_3sigma",
+    },
 ]
 
 
@@ -204,7 +306,7 @@ def custom_ignore(dir_path: str, names: List[str]) -> List[str]:
     ignored = []
     p = Path(dir_path)
     for name in names:
-        if name in {".git", ".venv", "results", "__pycache__", ".pytest_cache"}:
+        if name in {".git", ".venv", "results", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".coverage", "coverage"}:
             ignored.append(name)
         elif name == "models" and p == REPO_ROOT:
             # Only ignore root models/ dir (which contains giant binaries if any)
@@ -216,8 +318,9 @@ def copy_clean_repo(dest: Path):
     shutil.copytree(REPO_ROOT, dest, ignore=custom_ignore, dirs_exist_ok=True)
 
 
-def run_tests_in_dir(work_dir: Path, test_targets: List[str]) -> Tuple[int, str]:
-    cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-W", "ignore"] + test_targets
+def run_tests_in_dir(work_dir: Path, test_targets: List[str], fail_fast: bool = False) -> Tuple[int, str]:
+    extra = ["-x"] if fail_fast else []
+    cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-W", "ignore"] + extra + test_targets
     env = os.environ.copy()
     env["PYTHONPATH"] = str(work_dir)
     proc = subprocess.run(
@@ -226,7 +329,7 @@ def run_tests_in_dir(work_dir: Path, test_targets: List[str]) -> Tuple[int, str]
         capture_output=True,
         text=True,
         env=env,
-        timeout=30,
+        timeout=90,
     )
     out = (proc.stdout + "\n" + proc.stderr).strip()
     return proc.returncode, out
@@ -264,15 +367,17 @@ def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, A
             if not target_file.exists():
                 print(f"  [INVALID] File missing: {m['file']}", flush=True)
                 invalid_or_failed = True
-                results.append({
-                    "id": m_id,
-                    "desc": m["desc"],
-                    "target_found": "no",
-                    "status": "INVALID (file missing)",
-                    "file": m["file"],
-                    "output": "",
-                    "should_catch": m["should_catch"],
-                })
+                results.append(
+                    {
+                        "id": m_id,
+                        "desc": m["desc"],
+                        "target_found": "no",
+                        "status": "INVALID (file missing)",
+                        "file": m["file"],
+                        "output": "",
+                        "should_catch": m["should_catch"],
+                    }
+                )
                 continue
 
             content = target_file.read_text(encoding="utf-8")
@@ -280,15 +385,17 @@ def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, A
             if occ != 1:
                 print(f"  [INVALID] Target occurred {occ} times (expected exactly 1) in {m['file']}", flush=True)
                 invalid_or_failed = True
-                results.append({
-                    "id": m_id,
-                    "desc": m["desc"],
-                    "target_found": "no",
-                    "status": "INVALID (target not found)" if occ == 0 else f"INVALID (target matched {occ}x)",
-                    "file": m["file"],
-                    "output": "",
-                    "should_catch": m["should_catch"],
-                })
+                results.append(
+                    {
+                        "id": m_id,
+                        "desc": m["desc"],
+                        "target_found": "no",
+                        "status": "INVALID (target not found)" if occ == 0 else f"INVALID (target matched {occ}x)",
+                        "file": m["file"],
+                        "output": "",
+                        "should_catch": m["should_catch"],
+                    }
+                )
                 continue
 
             # 1. Baseline test run for this mutant's specific test targets
@@ -296,15 +403,17 @@ def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, A
             if base_rc != 0:
                 print(f"  [BASELINE FAILS] rc={base_rc}", flush=True)
                 invalid_or_failed = True
-                results.append({
-                    "id": m_id,
-                    "desc": m["desc"],
-                    "target_found": "yes",
-                    "status": "BASELINE FAILS",
-                    "file": m["file"],
-                    "output": base_out.splitlines()[-1] if base_out else "",
-                    "should_catch": m["should_catch"],
-                })
+                results.append(
+                    {
+                        "id": m_id,
+                        "desc": m["desc"],
+                        "target_found": "yes",
+                        "status": "BASELINE FAILS",
+                        "file": m["file"],
+                        "output": base_out.splitlines()[-1] if base_out else "",
+                        "should_catch": m["should_catch"],
+                    }
+                )
                 continue
 
             # 2. Apply mutation and assert file content actually changed
@@ -315,31 +424,35 @@ def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, A
             assert re_read != content, f"On-disk content of {m['file']} did not change after applying {m_id}!"
 
             # 3. Run tests with mutation
-            mut_rc, mut_out = run_tests_in_dir(tmp_dir, m["tests"])
+            mut_rc, mut_out = run_tests_in_dir(tmp_dir, m["tests"], fail_fast=True)
             last_line = mut_out.splitlines()[-1] if mut_out else ""
             if mut_rc != 0:
                 print(f"  [KILLED] Tests failed as expected! rc={mut_rc} ({last_line})", flush=True)
-                results.append({
-                    "id": m_id,
-                    "desc": m["desc"],
-                    "target_found": "yes",
-                    "status": "KILLED",
-                    "file": m["file"],
-                    "output": last_line,
-                    "should_catch": m["should_catch"],
-                })
+                results.append(
+                    {
+                        "id": m_id,
+                        "desc": m["desc"],
+                        "target_found": "yes",
+                        "status": "KILLED",
+                        "file": m["file"],
+                        "output": last_line,
+                        "should_catch": m["should_catch"],
+                    }
+                )
             else:
-                print(f"  [SURVIVED] Tests passed despite mutation! (WEAK TEST DETECTED)", flush=True)
+                print("  [SURVIVED] Tests passed despite mutation! (WEAK TEST DETECTED)", flush=True)
                 invalid_or_failed = True
-                results.append({
-                    "id": m_id,
-                    "desc": m["desc"],
-                    "target_found": "yes",
-                    "status": "SURVIVED",
-                    "file": m["file"],
-                    "output": last_line,
-                    "should_catch": m["should_catch"],
-                })
+                results.append(
+                    {
+                        "id": m_id,
+                        "desc": m["desc"],
+                        "target_found": "yes",
+                        "status": "SURVIVED",
+                        "file": m["file"],
+                        "output": last_line,
+                        "should_catch": m["should_catch"],
+                    }
+                )
 
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -348,8 +461,10 @@ def run_mutation_audit(only_ids: Optional[List[str]] = None) -> List[Dict[str, A
     killed = sum(1 for r in results if r["status"] == "KILLED")
     survived = sum(1 for r in results if r["status"] == "SURVIVED")
     base_fails = sum(1 for r in results if r["status"] == "BASELINE FAILS")
-    invalid = sum(1 for r in results if r["status"].startswith("INVALID"))
-    print(f"Total: {len(results)} | KILLED: {killed} | SURVIVED: {survived} | BASELINE FAILS: {base_fails} | INVALID: {invalid}", flush=True)
+    invalid = sum(1 for r in results if str(r["status"]).startswith("INVALID"))
+    print(
+        f"Total: {len(results)} | KILLED: {killed} | SURVIVED: {survived} | BASELINE FAILS: {base_fails} | INVALID: {invalid}", flush=True
+    )
 
     # Generate markdown table
     md_lines = [

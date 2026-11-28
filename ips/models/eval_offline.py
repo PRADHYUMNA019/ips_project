@@ -12,12 +12,15 @@ Produces:
 Rule B0: When run on synthetic smoke data, all outputs are written strictly under
 results/smoke/ and stamped with source="synthetic-smoke".
 """
-import os
-import sys
-import json
-import pickle
 import argparse
-from typing import Dict, Any, List
+import json
+import logging
+import os
+import pickle
+import sys
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
@@ -30,10 +33,12 @@ from ips.models.train import extract_matrix_from_df, is_smoke_dataframe, train_a
 from ips.models.evt import clopper_pearson_ci, compute_calibration_curve, fit_evt_threshold
 from ips.smoke.synth import SMOKE_BANNER
 
+ort: Any = None
 try:
-    import onnxruntime as ort
+    import onnxruntime as _ort
+    ort = _ort
 except ImportError:
-    ort = None
+    pass
 
 
 def evaluate_scores(y_true: np.ndarray, scores: np.ndarray, thresholds_dict: Dict[str, float]) -> Dict[str, Any]:
@@ -250,12 +255,12 @@ def plot_calibration_curve(calib_rows: List[Dict[str, Any]], fig_path: str, is_s
         fig.tight_layout()
         fig.savefig(fig_path, dpi=150)
         plt.close(fig)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to plot calibration curve %s: %s", fig_path, exc)
 
 
 def run_offline_evaluation(test_data_path: str, model_card_path: str = "models/model_card.json",
-                           out_dir: str = None, run_n_sweep: bool = True) -> Dict[str, Any]:
+                           out_dir: Optional[str] = None, run_n_sweep: bool = True) -> Dict[str, Any]:
     """Run full WP5 offline evaluation suite."""
     with open(model_card_path, "r", encoding="utf-8") as f:
         card = json.load(f)

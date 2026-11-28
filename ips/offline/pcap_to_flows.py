@@ -12,6 +12,7 @@ Key properties (A4 & B3):
   - Includes flow-key and provenance metadata (`src_ip, dst_ip, sport, dport, proto, start_ts,
     end_ts, instance, session_id, source, label_family, is_attack, encrypted, domain`).
 """
+
 import os
 import sys
 import socket
@@ -20,7 +21,6 @@ import argparse
 from collections import defaultdict
 from typing import List, Dict, Any, Optional, Tuple
 import yaml
-import numpy as np
 import pandas as pd
 
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -59,7 +59,12 @@ def _is_in_lan(ip_str: str, networks: List[ipaddress.IPv4Network], lan_prefix: O
 
 
 def _detect_tls_record(payload_bytes: bytes, sport: int, dport: int) -> bool:
-    if len(payload_bytes) >= 3 and payload_bytes[0] in (0x16, 0x17) and payload_bytes[1] == 0x03 and payload_bytes[2] in (0x01, 0x02, 0x03, 0x04):
+    if (
+        len(payload_bytes) >= 3
+        and payload_bytes[0] in (0x16, 0x17)
+        and payload_bytes[1] == 0x03
+        and payload_bytes[2] in (0x01, 0x02, 0x03, 0x04)
+    ):
         return True
     if sport in (443, 8443, 8883) or dport in (443, 8443, 8883):
         return True
@@ -147,8 +152,8 @@ def extract_flows_from_pcap(
     for c in lan_cidrs:
         try:
             networks.append(ipaddress.IPv4Network(c, strict=False))
-        except Exception:
-            pass
+        except ValueError:
+            continue
 
     feat_names = get_feature_names(early_n)
     assert_no_forbidden_features(feat_names)
@@ -156,6 +161,16 @@ def extract_flows_from_pcap(
     active_flows: Dict[Tuple[str, int, str, int, str], Dict[str, Any]] = {}
     instance_counts: Dict[Tuple[str, int, str, int, str], int] = defaultdict(int)
     completed_records: List[Dict[str, Any]] = []
+    skipped_counts: Dict[str, int] = {
+        "corrupt_frame": 0,
+        "arp": 0,
+        "ipv6": 0,
+        "non_ipv4": 0,
+        "ip_fragment": 0,
+        "non_tcp_udp": 0,
+    }
+    total_packets = 0
+    assigned_packets = 0
 
     with open(filepath, "rb") as f:
         try:
@@ -165,11 +180,29 @@ def extract_flows_from_pcap(
             reader = dpkt.pcapng.Reader(f)
 
         for ts, buf in reader:
+            total_packets += 1
             try:
                 eth = dpkt.ethernet.Ethernet(buf)
-                if not isinstance(eth.data, dpkt.ip.IP):
+                eth_data = eth.data
+                # Unwrap single or stacked 802.1Q VLAN tags if dpkt returned raw or VLAN object
+                while hasattr(eth_data, "data") and type(eth_data).__name__ in ("VLANtag8021Q", "Dot1Q"):
+                    eth_data = eth_data.data
+                if isinstance(eth_data, dpkt.arp.ARP):
+                    skipped_counts["arp"] += 1
                     continue
-                ip = eth.data
+                if isinstance(eth_data, dpkt.ip6.IP6):
+                    skipped_counts["ipv6"] += 1
+                    continue
+                if not isinstance(eth_data, dpkt.ip.IP):
+                    skipped_counts["non_ipv4"] += 1
+                    continue
+                ip = eth_data
+                # Non-initial IPv4 fragments carry no L4 header (BUG-07)
+                frag_bytes = int(getattr(ip, "offset", 0))
+                raw_foff = int(getattr(ip, "_flags_offset", 0)) & 0x1FFF
+                if frag_bytes > 0 or raw_foff > 0:
+                    skipped_counts["ip_fragment"] += 1
+                    continue
                 src_ip = socket.inet_ntoa(ip.src)
                 dst_ip = socket.inet_ntoa(ip.dst)
                 ip_tot_len = int(getattr(ip, "len", 0))
@@ -206,14 +239,15 @@ def extract_flows_from_pcap(
                         payload_len = len(l4.data)
                     raw_payload = bytes(l4.data) if l4.data else b""
                 else:
+                    skipped_counts["non_tcp_udp"] += 1
                     continue
 
+                assigned_packets += 1
                 ckey = canonical_flow_key(src_ip, sport, dst_ip, dport, proto)
 
-                # Kernel-matching flow restart rule (ebpf/ips_engine.c lines 359-365):
+                # Kernel-matching flow restart rule (ebpf/ips_engine.c):
                 # Restart on (a) pure SYN when FIN/RST (0x05) was seen OR valid_len > 0,
                 # or (b) inter-packet idle gap > flow_idle_s (default 120s from configs/system.yaml).
-                # Pure SYN retransmit on a fresh 0-payload flow within flow_idle_s does NOT restart.
                 if ckey in active_flows:
                     cur = active_flows[ckey]
                     reinit = False
@@ -266,15 +300,20 @@ def extract_flows_from_pcap(
                     flow["dirs"].append(int(direction))
                     flow["timestamps"].append(float(ts))
             except Exception:
+                skipped_counts["corrupt_frame"] += 1
                 continue
 
-    for ckey, flow in active_flows.items():
+    for _ckey, flow in active_flows.items():
         if len(flow["sizes"]) > 0:
-            completed_records.append(
-                _finalize_flow(flow, early_n, feat_names, session_id, source, label_family, is_attack, domain)
-            )
+            completed_records.append(_finalize_flow(flow, early_n, feat_names, session_id, source, label_family, is_attack, domain))
 
-    return pd.DataFrame(completed_records)
+    df = pd.DataFrame(completed_records)
+    df.attrs["packet_stats"] = {
+        "total_packets": total_packets,
+        "assigned_packets": assigned_packets,
+        "skipped": skipped_counts,
+    }
+    return df
 
 
 def main():

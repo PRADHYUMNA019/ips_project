@@ -7,9 +7,9 @@ plus standard flow-key metadata columns.
 Note: Kitsune pcaps have packets truncated to 200 bytes; adapt_kitsune_pcap() uses
 extract_flows_from_pcap() which computes payload length from IP/TCP headers.
 """
+
 import os
 import sys
-import warnings
 from typing import Dict, Any
 import pandas as pd
 

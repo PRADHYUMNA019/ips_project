@@ -25,7 +25,7 @@ This document records architectural, experimental, and empirical limitations of 
 
 ## 3. Protocol & Inspection Boundaries
 - **Early-Packet Leakage Window**:
-  - By definition, an early-flow inline detector allows the first $N$ payload packets (default $N=12$) plus handshake packets to pass through the gateway while features are being gathered.
+  - By definition, an early-flow inline detector allows the first $k$ payload packets (progressive checkpoints $k \in \{4, 8, 16\}$, `early_n = 16` in `configs/system.yaml`) plus handshake packets to pass through the gateway while features are being gathered.
   - Attacks with short payloads (e.g. single-packet exploits) can deliver their full payload before the verdict is reached.
 - **Slow Persistent Connections (Time-to-Verdict)**:
   - Devices configured with long transmission intervals (e.g. 30–60 seconds between telemetry reports) on keep-alive connections require multiple minutes to reach packet $N$.

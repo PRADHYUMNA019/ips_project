@@ -5,6 +5,7 @@ traffic/manifest.py — Ground-truth label manifest writer for experiment runs.
 Records attack and benign episode metadata for supervised evaluation:
   {run_id, family, src_ip, dst_ip, dst_port, start_ts, end_ts, params}
 """
+
 import os
 import json
 import csv
@@ -29,22 +30,23 @@ class ManifestWriter:
                 writer = csv.writer(f)
                 writer.writerow(MANIFEST_HEADER)
 
-    def record_episode(self, family: str, src_ip: str, dst_ip: str, dst_port: int,
-                       start_ts: float, end_ts: float, params: Dict[str, Any]):
+    def record_episode(self, family: str, src_ip: str, dst_ip: str, dst_port: int, start_ts: float, end_ts: float, params: Dict[str, Any]):
         """Append an attack or benign injection episode to the manifest."""
         param_str = json.dumps(params, sort_keys=True)
         with open(self.out_path, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow([
-                self.run_id,
-                family,
-                src_ip,
-                dst_ip,
-                int(dst_port),
-                round(start_ts, 4),
-                round(end_ts, 4),
-                param_str,
-            ])
+            writer.writerow(
+                [
+                    self.run_id,
+                    family,
+                    src_ip,
+                    dst_ip,
+                    int(dst_port),
+                    round(start_ts, 4),
+                    round(end_ts, 4),
+                    param_str,
+                ]
+            )
 
     @staticmethod
     def load_manifest(path: str):
@@ -56,17 +58,18 @@ class ManifestWriter:
             reader = csv.DictReader(f)
             for row in reader:
                 try:
-                    records.append({
-                        "run_id": row["run_id"],
-                        "family": row["family"],
-                        "src_ip": row["src_ip"],
-                        "dst_ip": row["dst_ip"],
-                        "dst_port": int(row["dst_port"]),
-                        "start_ts": float(row["start_ts"]),
-                        "end_ts": float(row["end_ts"]),
-                        "params": json.loads(row.get("params", "{}")),
-                    })
+                    records.append(
+                        {
+                            "run_id": row["run_id"],
+                            "family": row["family"],
+                            "src_ip": row["src_ip"],
+                            "dst_ip": row["dst_ip"],
+                            "dst_port": int(row["dst_port"]),
+                            "start_ts": float(row["start_ts"]),
+                            "end_ts": float(row["end_ts"]),
+                            "params": json.loads(row.get("params", "{}")),
+                        }
+                    )
                 except Exception:
                     continue
         return records
-

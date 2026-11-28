@@ -12,6 +12,7 @@ Runs seeds {42, 43, 44} with torch.set_num_threads(4) on real IoT-23 benign pcap
 across checkpoints k in {4, 8, 16}. Reports mean & spread of held-out benign FPR, KS statistic,
 and top-3 shifting features.
 """
+
 import os
 import sys
 import glob
@@ -25,6 +26,7 @@ os.environ["OMP_NUM_THREADS"] = "4"
 os.environ["MKL_NUM_THREADS"] = "4"
 
 import torch
+
 torch.set_num_threads(4)
 
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -133,15 +135,19 @@ def main():
     df_res.to_csv(args.out_csv, index=False)
 
     print("\n=== EXPLORATORY REAL IOT-23 CROSS-DEVICE BENIGN RESULTS (Mean +/- Std over seeds 42,43,44) ===")
-    agg = df_res.groupby(["config", "checkpoint_k"]).agg(
-        fpr_evt05_mean=("fpr_evt_target05", "mean"),
-        fpr_evt05_std=("fpr_evt_target05", "std"),
-        fpr_evt01_mean=("fpr_evt_target01", "mean"),
-        fpr_conf05_mean=("fpr_conformal_target05", "mean"),
-        fpr_3sig_mean=("fpr_three_sigma", "mean"),
-        ks_mean=("ks_stat_cal_vs_test", "mean"),
-        top_features=("top_3_shifting_features", "first"),
-    ).reset_index()
+    agg = (
+        df_res.groupby(["config", "checkpoint_k"])
+        .agg(
+            fpr_evt05_mean=("fpr_evt_target05", "mean"),
+            fpr_evt05_std=("fpr_evt_target05", "std"),
+            fpr_evt01_mean=("fpr_evt_target01", "mean"),
+            fpr_conf05_mean=("fpr_conformal_target05", "mean"),
+            fpr_3sig_mean=("fpr_three_sigma", "mean"),
+            ks_mean=("ks_stat_cal_vs_test", "mean"),
+            top_features=("top_3_shifting_features", "first"),
+        )
+        .reset_index()
+    )
     print(agg.to_string(index=False))
     print(f"\n[+] Wrote {args.out_csv}")
 

@@ -11,29 +11,38 @@ import os
 import time
 import logging
 import warnings
-from typing import Dict, Any, Tuple
+from typing import Any, Dict
 import numpy as np
 
 from ips.features import build_valid_mask_matrix
 
+torch: Any = None
 try:
-    import torch
+    import torch as _torch
+    torch = _torch
 except ImportError:
-    torch = None
+    pass
 
+onnx: Any = None
+ort: Any = None
+quantize_dynamic: Any = None
+QuantType: Any = None
+quant_pre_process: Any = None
 try:
-    import onnx
-    import onnxruntime as ort
-    from onnxruntime.quantization import quantize_dynamic, QuantType
+    import onnx as _onnx
+    import onnxruntime as _ort
+    from onnxruntime.quantization import QuantType as _QuantType, quantize_dynamic as _quantize_dynamic
+    onnx = _onnx
+    ort = _ort
+    quantize_dynamic = _quantize_dynamic
+    QuantType = _QuantType
     try:
-        from onnxruntime.quantization.shape_inference import quant_pre_process
+        from onnxruntime.quantization.shape_inference import quant_pre_process as _quant_pre_process
+        quant_pre_process = _quant_pre_process
     except ImportError:
-        quant_pre_process = None
+        pass
 except ImportError:
-    onnx = None
-    ort = None
-    quantize_dynamic = None
-    quant_pre_process = None
+    pass
 
 
 def export_to_onnx(pytorch_model, input_dim: int, onnx_path: str):
@@ -44,20 +53,20 @@ def export_to_onnx(pytorch_model, input_dim: int, onnx_path: str):
     pytorch_model.eval()
 
     dummy_input = torch.randn(1, input_dim, dtype=torch.float32)
-    export_kwargs = dict(
-        export_params=True,
-        opset_version=14,
-        do_constant_folding=True,
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
-    )
+    export_kwargs: Dict[str, Any] = {
+        "export_params": True,
+        "opset_version": 14,
+        "do_constant_folding": True,
+        "input_names": ["input"],
+        "output_names": ["output"],
+        "dynamic_axes": {"input": {0: "batch_size"}, "output": {0: "batch_size"}},
+    }
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         try:
             torch.onnx.export(
                 pytorch_model,
-                dummy_input,
+                (dummy_input,),
                 onnx_path,
                 dynamo=False,
                 **export_kwargs,
@@ -65,7 +74,7 @@ def export_to_onnx(pytorch_model, input_dim: int, onnx_path: str):
         except TypeError:
             torch.onnx.export(
                 pytorch_model,
-                dummy_input,
+                (dummy_input,),
                 onnx_path,
                 **export_kwargs,
             )
@@ -109,8 +118,8 @@ def quantize_to_int8(fp32_onnx_path: str, int8_onnx_path: str) -> str:
         if os.path.exists(prep_path):
             try:
                 os.remove(prep_path)
-            except OSError:
-                pass
+            except OSError as exc:
+                logging.getLogger(__name__).debug("Failed to remove temp ONNX %s: %s", prep_path, exc)
     return int8_onnx_path
 
 

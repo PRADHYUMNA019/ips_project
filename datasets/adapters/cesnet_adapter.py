@@ -10,10 +10,11 @@ PPI_PKT_DIRECTIONS, PPI_PKT_TIMES vs packets_length/packets_dir/packets_iat) and
 units (seconds vs milliseconds) are marked UNVERIFIED SCHEMA until checked against
 real downloaded CESNET files.
 """
+
 import os
 import sys
 import warnings
-from typing import Dict, Any, List
+from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
@@ -113,7 +114,7 @@ def adapt_cesnet_record(
     return out
 
 
-def load_and_adapt_cesnet(filepath: str, early_n: int = 12, limit: int = None, session_id: str = "cesnet_w01") -> pd.DataFrame:
+def load_and_adapt_cesnet(filepath: str, early_n: int = 12, limit: Optional[int] = None, session_id: str = "cesnet_w01") -> pd.DataFrame:
     """Load CESNET parquet/csv file, emit UNVERIFIED SCHEMA warning with actual columns, and adapt."""
     if filepath.endswith(".parquet"):
         df = pd.read_parquet(filepath)

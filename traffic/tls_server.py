@@ -4,6 +4,7 @@ traffic/tls_server.py — TLS echo server (port 8883).
 Run in the server namespace:
   sudo ip netns exec srv python3 traffic/tls_server.py
 """
+
 import ssl
 import socket
 import threading
@@ -18,8 +19,9 @@ import subprocess
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CERTS_DIR = os.path.join(BASE_DIR, "certs")
 CERT = os.path.join(CERTS_DIR, "server.crt")
-KEY  = os.path.join(CERTS_DIR, "server.key")
+KEY = os.path.join(CERTS_DIR, "server.key")
 HOST, PORT = "0.0.0.0", 8883
+
 
 def ensure_certs():
     if not os.path.exists(CERTS_DIR):
@@ -31,12 +33,15 @@ def ensure_certs():
             from cryptography.x509.oid import NameOID
             from cryptography.hazmat.primitives import hashes, serialization
             from cryptography.hazmat.primitives.asymmetric import rsa
-            import datetime, ipaddress
+            import datetime
+            import ipaddress
 
             key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-            subject = issuer = x509.Name([
-                x509.NameAttribute(NameOID.COMMON_NAME, u"10.0.2.10"),
-            ])
+            subject = issuer = x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COMMON_NAME, "10.0.2.10"),
+                ]
+            )
             cert = (
                 x509.CertificateBuilder()
                 .subject_name(subject)
@@ -46,39 +51,66 @@ def ensure_certs():
                 .not_valid_before(datetime.datetime.now(datetime.timezone.utc))
                 .not_valid_after(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365))
                 .add_extension(
-                    x509.SubjectAlternativeName([
-                        x509.IPAddress(ipaddress.IPv4Address("10.0.2.10")),
-                        x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-                        x509.DNSName(u"localhost"),
-                    ]),
+                    x509.SubjectAlternativeName(
+                        [
+                            x509.IPAddress(ipaddress.IPv4Address("10.0.2.10")),
+                            x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+                            x509.DNSName("localhost"),
+                        ]
+                    ),
                     critical=False,
                 )
                 .sign(key, hashes.SHA256())
             )
             with open(KEY, "wb") as f:
-                f.write(key.private_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PrivateFormat.TraditionalOpenSSL,
-                    encryption_algorithm=serialization.NoEncryption(),
-                ))
+                f.write(
+                    key.private_bytes(
+                        encoding=serialization.Encoding.PEM,
+                        format=serialization.PrivateFormat.TraditionalOpenSSL,
+                        encryption_algorithm=serialization.NoEncryption(),
+                    )
+                )
             with open(CERT, "wb") as f:
                 f.write(cert.public_bytes(serialization.Encoding.PEM))
             logger.info("Certificate generated successfully (pure Python cryptography).")
         except ImportError:
             cmd = [
-                "openssl", "req", "-x509", "-newkey", "rsa:2048",
-                "-keyout", KEY, "-out", CERT, "-days", "365",
-                "-nodes", "-subj", "/CN=10.0.2.10",
-                "-addext", "subjectAltName = IP:10.0.2.10,IP:127.0.0.1,DNS:localhost"
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-keyout",
+                KEY,
+                "-out",
+                CERT,
+                "-days",
+                "365",
+                "-nodes",
+                "-subj",
+                "/CN=10.0.2.10",
+                "-addext",
+                "subjectAltName = IP:10.0.2.10,IP:127.0.0.1,DNS:localhost",
             ]
             try:
                 subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 # fallback without -addext if openssl is older
                 cmd_fallback = [
-                    "openssl", "req", "-x509", "-newkey", "rsa:2048",
-                    "-keyout", KEY, "-out", CERT, "-days", "365",
-                    "-nodes", "-subj", "/CN=10.0.2.10"
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-keyout",
+                    KEY,
+                    "-out",
+                    CERT,
+                    "-days",
+                    "365",
+                    "-nodes",
+                    "-subj",
+                    "/CN=10.0.2.10",
                 ]
                 subprocess.run(cmd_fallback, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             logger.info("Certificate generated successfully (openssl CLI).")
@@ -95,7 +127,7 @@ def handle_client(conn, addr):
             pkt_count += 1
             snippet = data[:24].decode(errors="replace").strip()
             logger.info(f"[{addr}] Pkt #{pkt_count} ({len(data)}B) '{snippet}' -> Echoing ACK")
-            conn.sendall(data[:64])   # small echo, like an ACK
+            conn.sendall(data[:64])  # small echo, like an ACK
     except Exception as e:
         logger.debug(f"[{addr}] Disconnected: {e}")
     finally:

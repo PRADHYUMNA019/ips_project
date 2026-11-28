@@ -7,12 +7,12 @@ fast profile for ~10 s, and asserts:
   1. At least 5 messages were sent on ONE connection (no reconnect loop).
   2. Zero exceptions were raised inside run_iot_device.
 """
+
 import os
 import sys
 import ssl
 import socket
 import threading
-import time
 import tempfile
 import subprocess
 
@@ -27,6 +27,7 @@ from traffic.benign_iot_generator import run_iot_device, PROFILES
 # ---------------------------------------------------------------------------
 # Helpers: a minimal TLS echo server for testing
 # ---------------------------------------------------------------------------
+
 
 def _generate_test_certs(cert_dir):
     """Generate a throwaway self-signed cert for the test server.
@@ -43,9 +44,11 @@ def _generate_test_certs(cert_dir):
         import datetime
 
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        subject = issuer = x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, u"localhost"),
-        ])
+        subject = issuer = x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
+            ]
+        )
         cert = (
             x509.CertificateBuilder()
             .subject_name(subject)
@@ -57,19 +60,32 @@ def _generate_test_certs(cert_dir):
             .sign(key, hashes.SHA256())
         )
         with open(key_path, "wb") as f:
-            f.write(key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.TraditionalOpenSSL,
-                encryption_algorithm=serialization.NoEncryption(),
-            ))
+            f.write(
+                key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.TraditionalOpenSSL,
+                    encryption_algorithm=serialization.NoEncryption(),
+                )
+            )
         with open(cert_path, "wb") as f:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
     except ImportError:
         subprocess.run(
             [
-                "openssl", "req", "-x509", "-newkey", "rsa:2048",
-                "-keyout", key_path, "-out", cert_path,
-                "-days", "1", "-nodes", "-subj", "/CN=localhost",
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-keyout",
+                key_path,
+                "-out",
+                cert_path,
+                "-days",
+                "1",
+                "-nodes",
+                "-subj",
+                "/CN=localhost",
             ],
             check=True,
             stdout=subprocess.DEVNULL,
@@ -173,19 +189,12 @@ def test_device_sends_multiple_messages_one_connection(tls_server):
 
     assert "msg_count" in result, "run_iot_device did not populate result_holder"
     assert result["msg_count"] >= 5, (
-        f"Expected >= 5 messages but got {result['msg_count']}. "
-        "The wait-before-assignment bug (F1) may still be present."
+        f"Expected >= 5 messages but got {result['msg_count']}. The wait-before-assignment bug (F1) may still be present."
     )
-    assert result["connections"] == 1, (
-        f"Expected 1 connection but got {result['connections']}. "
-        "Device is reconnecting (F1 regression)."
-    )
+    assert result["connections"] == 1, f"Expected 1 connection but got {result['connections']}. Device is reconnecting (F1 regression)."
     # Allow at most the initial connection log, no crash exceptions
-    crash_exceptions = [e for e in result.get("exceptions", [])
-                        if "wait" in e.lower() or "local variable" in e.lower()]
-    assert len(crash_exceptions) == 0, (
-        f"F1 crash exceptions found: {crash_exceptions}"
-    )
+    crash_exceptions = [e for e in result.get("exceptions", []) if "wait" in e.lower() or "local variable" in e.lower()]
+    assert len(crash_exceptions) == 0, f"F1 crash exceptions found: {crash_exceptions}"
 
 
 def test_slow_profile_sends_multiple_messages(tls_server):
@@ -206,9 +215,7 @@ def test_slow_profile_sends_multiple_messages(tls_server):
     t.start()
     t.join(timeout=20)
 
-    assert result["msg_count"] >= 3, (
-        f"Slow profile sent only {result['msg_count']} messages in 8 s"
-    )
+    assert result["msg_count"] >= 3, f"Slow profile sent only {result['msg_count']} messages in 8 s"
     assert result["connections"] == 1
 
 
@@ -235,9 +242,7 @@ def test_reconnect_connection_mode(tls_server):
     t.join(timeout=10)
 
     assert result["msg_count"] >= 3, f"Expected >= 3 messages, got {result.get('msg_count')}"
-    assert result["connections"] == result["msg_count"], (
-        f"Expected {result['msg_count']} connections, got {result['connections']}"
-    )
+    assert result["connections"] == result["msg_count"], f"Expected {result['msg_count']} connections, got {result['connections']}"
 
 
 def test_persistent_reconnect_after_msgs(tls_server):
@@ -263,10 +268,7 @@ def test_persistent_reconnect_after_msgs(tls_server):
     t.join(timeout=10)
 
     assert result["msg_count"] >= 6, f"Expected >= 6 msgs, got {result.get('msg_count')}"
-    expected_conns = (result["msg_count"] // 3) + (1 if result["msg_count"] % 3 != 0 else 0)
-    assert result["connections"] >= 2, (
-        f"Expected multiple connections due to reconnect_after_msgs=3, got {result['connections']}"
-    )
+    assert result["connections"] >= 2, f"Expected multiple connections due to reconnect_after_msgs=3, got {result['connections']}"
 
 
 def test_time_scale_speeds_up(tls_server):
@@ -291,7 +293,4 @@ def test_time_scale_speeds_up(tls_server):
     t1.start()
     t1.join(timeout=10)
 
-    assert res_fast["msg_count"] >= 8, (
-        f"Expected >= 8 messages with time_scale=0.1, got {res_fast.get('msg_count')}"
-    )
-
+    assert res_fast["msg_count"] >= 8, f"Expected >= 8 messages with time_scale=0.1, got {res_fast.get('msg_count')}"
